@@ -1,0 +1,13 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:skills": "node build-skill-site.mjs",
+    "start": "node server.mjs",
+    "test": "node --test test-*.mjs",
+    "vendor:esptool": "node vendor-esptool.mjs"
+  },
+  "devDependencies": {
+    "esptool-js": "0.6.1"
+  }
+}

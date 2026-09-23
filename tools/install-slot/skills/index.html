@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="AI Passport Cover Arts Launcher 创作者兼容指南与 Agent Skill。">
+  <title>AI Passport Cover Arts Launcher Skill</title>
+  <style>
+    :root { color-scheme: light; font: 16px/1.65 "Avenir Next", "Noto Sans SC", "PingFang SC", sans-serif; --ink:#17211d; --muted:#64716b; --line:#d9e2dd; --paper:#f4f7f5; --card:#fff; --accent:#12664f; --soft:#e7f2ed; --warm:#f4efe6; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--paper); color:var(--ink); }
+    a { color:var(--accent); text-underline-offset:3px; }
+    main { width:min(1040px, calc(100% - 32px)); margin:0 auto; padding:48px 0 80px; }
+    .eyebrow { margin:0 0 12px; color:var(--accent); font-size:13px; font-weight:800; letter-spacing:.13em; }
+    h1 { max-width:830px; margin:0; font-size:clamp(38px, 7vw, 72px); line-height:1.02; letter-spacing:-.055em; }
+    .lead { max-width:750px; margin:20px 0 0; color:var(--muted); font-size:clamp(18px, 2.4vw, 23px); }
+    .hero { padding:30px 0 42px; }
+    .protocol { display:inline-flex; align-items:center; gap:10px; margin-top:26px; padding:10px 14px; border:1px solid #b9d0c5; border-radius:999px; background:var(--soft); color:var(--accent); font-weight:750; }
+    .protocol span:first-child { display:grid; width:28px; height:28px; place-items:center; border-radius:50%; background:var(--accent); color:#fff; }
+    .grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:16px; }
+    .card { padding:24px; border:1px solid var(--line); border-radius:18px; background:var(--card); }
+    .card h2, .card h3 { margin:0 0 8px; line-height:1.25; }
+    .card p { margin:7px 0; color:var(--muted); }
+    .tag { display:inline-block; margin-bottom:14px; padding:4px 9px; border-radius:999px; background:var(--warm); color:#65543c; font-size:12px; font-weight:800; }
+    section { margin-top:18px; }
+    .wide { margin-top:16px; }
+    .copy-box { position:relative; margin-top:13px; padding:17px 108px 17px 17px; border-radius:12px; background:#101713; color:#dce8e1; font:13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; white-space:pre-wrap; overflow-wrap:anywhere; }
+    button { position:absolute; top:10px; right:10px; border:1px solid #4e6258; border-radius:8px; padding:7px 11px; background:#1d2923; color:#fff; font:inherit; cursor:pointer; }
+    .downloads { display:flex; flex-wrap:wrap; gap:10px; margin-top:16px; }
+    .downloads a { display:inline-flex; padding:9px 13px; border:1px solid var(--accent); border-radius:9px; text-decoration:none; font-weight:750; }
+    .downloads a.primary { background:var(--accent); color:#fff; }
+    .boundary { border-left:4px solid var(--accent); background:var(--soft); }
+    footer { margin-top:36px; padding-top:20px; border-top:1px solid var(--line); color:var(--muted); font-size:14px; }
+    @media (max-width:720px) { main { padding-top:24px; } .grid { grid-template-columns:1fr; } .copy-box { padding:54px 14px 14px; } h1 { font-size:44px; } }
+  </style>
+</head>
+<body>
+<main>
+  <header class="hero">
+    <p class="eyebrow">AI PASSPORT · CREATOR PROTOCOL</p>
+    <h1>让玩法只在封面页安全返回 Launcher</h1>
+    <p class="lead">通用玩法无需适配即可安装和启动；创作者也可以增加一个边界清晰的快捷返回：仅在玩法已有封面页长按上键。</p>
+    <div class="protocol"><span>↑</span><span>封面长按 · 约 1.5 秒</span></div>
+  </header>
+
+  <section class="grid" aria-label="兼容级别">
+    <article class="card">
+      <span class="tag">默认</span>
+      <h2>通用兼容</h2>
+      <p>无需 Launcher SDK。玩法正常启动和运行；复位或重新上电后返回 Launcher，原有名称和封面继续保留。</p>
+    </article>
+    <article class="card">
+      <span class="tag">可选增强</span>
+      <h2>封面快捷返回</h2>
+      <p>只在玩法自己已有的封面／开始页处理 Up Long。游戏、设置、暂停和其他页面的按键行为保持不变。</p>
+    </article>
+  </section>
+
+  <section class="card wide boundary">
+    <h2>边界比按键更重要</h2>
+    <p>如果 Agent 无法可靠识别封面状态，就应停止并说明情况；不能新增全局监听，也不能为了协议擅自创建封面页。设备重启返回 Launcher 始终是通用兜底。</p>
+  </section>
+
+  <section class="card wide">
+    <h2>交给 Agent 接入</h2>
+    <p>将下面的指令发送给支持 Skill 的 Agent：</p>
+    <div class="copy-box" id="integrate-prompt">请使用 $ai-passport-cover-arts-launcher，仅在当前玩法已有的封面页接入长按 Up 返回 Cover Arts Launcher。不要全局占用 Up Long，不要修改游戏、设置或其他页面的按键行为；如果项目没有可识别的封面状态，先说明情况，不要擅自新增页面。保留设备重启返回 Launcher 的兼容策略，未经确认不要刷机、提交或发布。<button type="button" data-copy="integrate-prompt">复制</button></div>
+  </section>
+
+  <section class="grid">
+    <article class="card">
+      <h3>只检查，不修改</h3>
+      <div class="copy-box" id="audit-prompt">请使用 $ai-passport-cover-arts-launcher 检查这个玩法能否接入仅封面页生效的 Up Long 返回协议。不要修改文件；列出封面状态、输入分发点、分区假设和仍需确认的真机项目。<button type="button" data-copy="audit-prompt">复制</button></div>
+    </article>
+    <article class="card">
+      <h3>面向玩家的文案</h3>
+      <div class="copy-box" id="player-copy">支持 Cover Arts Launcher 返回。在玩法封面长按上键约 1.5 秒，即可返回玩法库。<button type="button" data-copy="player-copy">复制</button></div>
+    </article>
+  </section>
+
+  <section class="card wide">
+    <h2>Skill 与素材</h2>
+    <p>Skill 包含双语 Agent 指引、协议与验收清单，以及不硬编码 factory 地址的 ESP-IDF 参考组件。</p>
+    <div class="downloads">
+      <a class="primary" href="/skills/ai-passport-cover-arts-launcher.zip">下载 Skill ZIP</a>
+      <a href="/skills/ai-passport-cover-arts-launcher/SKILL.md">查看 SKILL.md</a>
+      <a href="/skills/ai-passport-cover-arts-launcher/SKILL.zh_CN.md">中文指引</a>
+      <a href="/skills/ai-passport-cover-arts-launcher/references/protocol.zh_CN.md">协议与验收</a>
+    </div>
+  </section>
+
+  <footer>公开入口：<a href="https://cover-arts-launcher.yishan.app/skills">cover-arts-launcher.yishan.app/skills</a> · Skill 名称：<code>ai-passport-cover-arts-launcher</code></footer>
+</main>
+<script>
+  document.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-copy]");
+    if (!button) return;
+    const box = document.getElementById(button.dataset.copy);
+    const text = [...box.childNodes].filter((node) => node !== button).map((node) => node.textContent).join("").trim();
+    await navigator.clipboard.writeText(text);
+    const label = button.textContent;
+    button.textContent = "已复制";
+    setTimeout(() => { button.textContent = label; }, 1200);
+  });
+</script>
+</body>
+</html>

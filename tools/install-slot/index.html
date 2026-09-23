@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Passport Play Manager</title>
+  <style>
+    :root { color-scheme: light; font: 16px/1.5 "Avenir Next", "Noto Sans SC", "PingFang SC", sans-serif; --ink:#18201d; --muted:#65706b; --line:#d8dedb; --paper:#f5f7f5; --accent:#12664f; --accent-soft:#eaf4f0; --danger:#9b2c2c; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--paper); color: var(--ink); }
+    main { width: min(920px, calc(100% - 32px)); margin: 40px auto 80px; }
+    header { margin-bottom: 24px; }
+    h1 { margin: 0 0 6px; font-size: clamp(28px, 5vw, 46px); letter-spacing: -.04em; }
+    h2 { margin: 0 0 8px; font-size: 21px; }
+    p { margin: 6px 0; }
+    .muted, small { color: var(--muted); }
+    .panel { background: white; border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin: 16px 0; }
+    .toolbar, .tabs, .row, .actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .toolbar { justify-content: space-between; }
+    button, input, select { font: inherit; }
+    button { border: 1px solid var(--ink); border-radius: 8px; padding: 9px 14px; background: white; cursor: pointer; }
+    button.primary { background: var(--ink); color: white; }
+    button.danger { border-color: var(--danger); color: var(--danger); }
+    button:disabled { cursor: not-allowed; opacity: .45; }
+    .tabs button[aria-selected="true"] { background: var(--accent); color: white; border-color: var(--accent); }
+    label.field { display: grid; gap: 5px; margin: 12px 0; }
+    label.field > input, label.field > select { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; background: white; }
+    label.field > input[readonly] { color: #385047; background: #f2f6f4; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+    .url-entry { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; }
+    .url-entry .field { margin-bottom: 0; }
+    .source-summary { display: inline-flex; align-items: center; width: fit-content; margin-top: 12px; padding: 5px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 13px; font-weight: 700; }
+    .metadata-grid { grid-template-columns: minmax(0, 1.5fr) minmax(120px, .7fr) minmax(160px, 1fr); }
+    .cover-workbench { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 18px; align-items: stretch; margin: 18px 0; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: #fbfcfb; }
+    .cover-frame { position: relative; width: 150px; aspect-ratio: 3 / 4; overflow: hidden; border-radius: 10px; border: 1px solid #c8d1cc; background: #111713; box-shadow: 0 10px 26px rgb(24 32 29 / 14%); }
+    .cover-frame img { display: block; width: 100%; height: 100%; object-fit: cover; image-rendering: auto; }
+    .cover-placeholder { position: absolute; inset: 0; display: grid; place-items: center; padding: 18px; color: #afbbb4; text-align: center; font-size: 13px; background: linear-gradient(145deg, #17201b, #26332c); }
+    .cover-details { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
+    .cover-details h3 { margin: 0 0 2px; font-size: 17px; }
+    .cover-note { padding: 9px 11px; border-radius: 8px; background: var(--accent-soft); color: #315e4f; font-size: 13px; }
+    #image-info { overflow-wrap: anywhere; }
+    .warning { border-left: 4px solid #c77812; background: #fff8e9; padding: 12px 14px; margin: 14px 0; }
+    .error { color: var(--danger); }
+    .ok { color: var(--accent); }
+    .status { font-weight: 650; }
+    a { color: var(--accent); text-underline-offset: 3px; }
+    .completion { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 16px; align-items: center; margin-top: 18px; padding: 16px; border: 2px solid var(--accent); border-radius: 12px; background: var(--accent-soft); }
+    .completion-art { position: relative; width: 84px; aspect-ratio: 3 / 4; overflow: hidden; border-radius: 7px; background: #17201b; }
+    .completion-art img { width: 100%; height: 100%; object-fit: cover; }
+    .completion-copy h3 { margin: 0 0 2px; font-size: 21px; }
+    .completion-copy .success-kicker { color: var(--accent); font-size: 13px; font-weight: 800; letter-spacing: .06em; }
+    pre { background: #101512; color: #d9e7de; border-radius: 10px; padding: 14px; min-height: 120px; max-height: 280px; overflow: auto; white-space: pre-wrap; word-break: break-word; font: 12px/1.55 ui-monospace, monospace; }
+    .slot { display: flex; gap: 8px; align-items: center; padding: 9px; border: 1px solid var(--line); border-radius: 8px; }
+    #slots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0; }
+    [hidden] { display: none !important; }
+    @media (max-width: 650px) { .grid, .metadata-grid, #slots, .url-entry { grid-template-columns: 1fr; } .cover-workbench { grid-template-columns: 112px minmax(0, 1fr); gap: 14px; } .cover-frame { width: 112px; } main { margin-top: 20px; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <p class="muted">AI PASSPORT · ENGINEERING PREVIEW</p>
+    <h1>Play Manager</h1>
+    <p>安装一次 Launcher，之后只替换指定玩法位置。页面会验证 App、名称与封面的绑定；设备端使用 Cover Art 选择玩法。</p>
+  </header>
+
+  <section id="unsupported" class="panel error" hidden>
+    当前浏览器不支持 Web Serial。请在电脑端 Chrome 或 Edge 的安全页面或 localhost 打开。
+  </section>
+
+  <section class="panel toolbar">
+    <div>
+      <strong>设备</strong>
+      <div id="device-status" class="muted">尚未连接</div>
+    </div>
+    <div class="actions">
+      <button id="disconnect" disabled>断开</button>
+      <button id="connect" class="primary">连接 AI Passport</button>
+    </div>
+  </section>
+
+  <nav class="tabs" aria-label="安装类型">
+    <button type="button" data-mode="system" aria-selected="true">首次安装 Launcher</button>
+    <button type="button" data-mode="play" aria-selected="false">安装或替换玩法</button>
+  </nav>
+
+  <section id="system-panel" class="panel">
+    <h2>首次完整系统安装</h2>
+    <p class="muted">只接受已确认的 ESP32-C3 8 MiB 单 factory 布局，或本项目兼容布局。未知分区一律拒绝自动迁移。</p>
+    <label class="field">完整 Launcher 合并镜像（从 0x0 发布）<input id="system-file" type="file" accept=".bin,application/octet-stream"></label>
+    <label class="field">发布方 SHA-256（64 位十六进制）<input id="system-sha" inputmode="latin" autocomplete="off" placeholder="必须与发布记录一致"></label>
+    <div class="warning">
+      <strong>这是一次性存储迁移。</strong>
+      <p>将重写 bootloader、分区表、factory Launcher、OTA 元数据和全部三个玩法/封面区域，并可能重置现有设置。V1 不续传；断线后需重新进入 ROM 下载模式并从头执行。</p>
+      <label><input id="system-confirm" type="checkbox"> 我已理解现有固件和玩法会被替换，并已保存需要保留的数据。</label>
+    </div>
+    <div class="actions">
+      <button id="install-system" class="primary" disabled>验证并安装 Launcher</button>
+    </div>
+    <div id="system-result" role="status" class="status"></div>
+    <div id="system-complete-actions" class="actions" hidden>
+      <button id="go-play" class="primary">安装第一个玩法</button>
+      <button id="finish-empty">以空玩法库完成</button>
+    </div>
+  </section>
+
+  <section id="play-panel" class="panel" hidden>
+    <h2>安装玩法位置</h2>
+    <p class="muted">写入范围严格限制为你选择的一个 OTA 位置、非活动封面银行及其 SHA 绑定信任收据，不触碰 NVS、PHY、Launcher 或分区表。</p>
+    <p class="muted">支持无需适配的通用玩法：启动后按正常游玩处理；复位或重新上电会返回 Launcher，原玩法名称和封面继续保留，并可再次启动。</p>
+    <p class="muted">玩法创作者如需更快返回，可使用 <a href="/skills/">AI Passport Cover Arts Launcher Skill</a>，仅在玩法已有封面页接入长按上键，且不占用游戏过程中的 Up Long。</p>
+    <div class="tabs" aria-label="玩法来源">
+      <button type="button" data-source="play" aria-selected="true">Play URL</button>
+      <button type="button" data-source="local" aria-selected="false">本地文件</button>
+    </div>
+    <div id="play-source">
+      <div class="url-entry">
+        <label class="field">官方 Play 详情 URL<input id="play-url" type="url" placeholder="https://ai-passport.folotoy.cn/plays/281/"></label>
+        <button id="resolve-play">读取玩法资料</button>
+      </div>
+      <div id="play-meta-summary" class="source-summary" hidden></div>
+    </div>
+    <div id="local-source" hidden>
+      <label class="field">玩法固件（app-only 或合并镜像）<input id="play-file" type="file" accept=".bin,application/octet-stream"></label>
+      <label class="field">可选发布 SHA-256<input id="play-sha" inputmode="latin" autocomplete="off" placeholder="留空时使用本地文件计算值"></label>
+    </div>
+    <div class="grid metadata-grid">
+      <label class="field">标题<input id="play-title" maxlength="64"></label>
+      <label class="field">版本<input id="play-version" maxlength="24"></label>
+      <label class="field">Source ID<input id="play-source-id" maxlength="48" placeholder="官方 Play 自动填写" readonly></label>
+    </div>
+    <div id="title-check" role="status" class="status"></div>
+    <div class="cover-workbench">
+      <div class="cover-frame" aria-label="封面预览">
+        <img id="cover-preview" alt="处理后的玩法封面预览" hidden>
+        <div id="cover-placeholder" class="cover-placeholder">120 × 160<br>Cover Art</div>
+      </div>
+      <div class="cover-details">
+        <h3>封面预览</h3>
+        <p class="muted">官方封面会自动载入，也可以上传 PNG、JPEG 或 WebP 替换。</p>
+        <label class="field">选择自定义封面<input id="cover-file" type="file" accept="image/png,image/jpeg,image/webp"></label>
+        <p id="cover-info" class="muted">选择图片或读取官方 Play 后显示封面。</p>
+        <p class="cover-note">图片只在当前浏览器中裁切与压缩，不上传到第三方；预览文件不超过 50 KiB，设备封面固定为 120×160 RGB565。</p>
+      </div>
+    </div>
+    <p id="image-info" class="muted">尚未载入固件。</p>
+    <div id="slots" aria-label="设备玩法位置"></div>
+    <label class="field">目标位置<select id="target-slot"><option value="">请先连接并读取设备</option></select></label>
+    <label id="replace-label" class="warning" hidden><input id="replace-confirm" type="checkbox"> 我确认替换此位置；原玩法固件及与之绑定的封面将不再可用。</label>
+    <label id="erase-label" class="warning" hidden><input id="erase-confirm" type="checkbox"> 我确认擦除所选位置的玩法固件、两个封面 bank 和信任收据；Launcher、NVS 和其他位置不受影响。</label>
+    <div class="actions">
+      <button id="install-play" class="primary" disabled>安装到所选位置</button>
+      <button id="repair-cover" disabled>仅修复名称与封面</button>
+      <button id="erase-slot" class="danger" disabled>擦除所选位置</button>
+      <button id="retry-cover" hidden>仅重试封面</button>
+      <button id="finish-without-cover" hidden>使用占位图完成并重启</button>
+    </div>
+    <div id="play-result" role="status" class="status"></div>
+    <section id="play-complete" class="completion" aria-live="assertive" hidden>
+      <div class="completion-art">
+        <img id="complete-cover" alt="已安装玩法封面" hidden>
+        <div id="complete-cover-placeholder" class="cover-placeholder">PLAY</div>
+      </div>
+      <div class="completion-copy">
+        <div class="success-kicker">FLASH VERIFIED</div>
+        <h3 id="complete-title"></h3>
+        <p id="complete-meta"></p>
+        <p id="complete-reset" class="muted"></p>
+        <button id="install-another" type="button">继续安装其他玩法</button>
+      </div>
+    </section>
+    <p class="muted">屏幕在进入下载模式和最终重启时短暂闪烁属于预期；若写入过程中持续频闪、黑屏或串口断开，请停止并检查 USB 数据线与供电。</p>
+  </section>
+
+  <section class="panel">
+    <h2>过程记录</h2>
+    <pre id="log" aria-live="polite">等待操作。</pre>
+  </section>
+</main>
+<script type="module" src="./app.js"></script>
+</body>
+</html>

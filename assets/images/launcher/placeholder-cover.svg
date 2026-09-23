@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="160" viewBox="0 0 120 160">
+  <title>Launcher built-in placeholder cover reference</title>
+  <rect width="120" height="160" rx="4" fill="#0b0d11"/>
+  <rect x="4" y="4" width="112" height="152" fill="#28303a"/>
+  <path d="M4 4h112v108H4z" fill="#313a45"/>
+  <rect x="36" y="42" width="48" height="50" rx="3" fill="#65707c"/>
+  <path d="M54 56h12v11h11v12H66v11H54V79H43V67h11z" fill="#f0c85a"/>
+  <rect x="4" y="112" width="112" height="24" fill="#f0c85a"/>
+  <circle cx="51" cy="124" r="3" fill="#101319"/>
+  <circle cx="69" cy="124" r="3" fill="#101319"/>
+  <rect x="35" y="144" width="50" height="4" rx="2" fill="#9aa2ad"/>
+</svg>

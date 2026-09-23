@@ -1,0 +1,99 @@
+name: Build firmware
+
+on:
+  push:
+    tags:
+      - "**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      artifact_name: ${{ steps.artifact_name.outputs.name }}
+      firmware_file: ${{ steps.firmware_name.outputs.name }}
+      firmware_zip: ${{ steps.firmware_name.outputs.zip }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Restore ccache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: .ccache
+          key: ccache-${{ github.ref_type }}-${{ github.ref_name }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ github.ref_type }}-${{ github.ref_name }}-
+            ccache-
+
+      - name: Build firmware (ESP-IDF 5.5.3 / esp32c3)
+        uses: espressif/esp-idf-ci-action@9d38657f3d789ca759b2b37aaf5ceffbc42c4f0d # v1
+        with:
+          esp_idf_version: v5.5.3
+          target: esp32c3
+          extra_docker_args: >-
+            -e CCACHE_DIR=/app/${{ github.repository }}/.ccache
+            -e IDF_CCACHE_ENABLE=1
+          command: ./tools/validate.sh --firmware
+
+      - name: Set artifact name
+        id: artifact_name
+        run: echo "name=cover-arts-launcher-${GITHUB_REF_NAME//\//-}" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve firmware filename
+        id: firmware_name
+        run: |
+          firmware="$(python3 tools/firmware_artifact.py full-bin)"
+          echo "name=${firmware}" >> "$GITHUB_OUTPUT"
+          echo "zip=${firmware}.zip" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare release files
+        run: |
+          firmware="${{ steps.firmware_name.outputs.name }}"
+          mkdir -p release
+          cp "build/${firmware}" "release/${firmware}"
+          zip -9 -j "release/${firmware}.zip" "release/${firmware}"
+          (cd release && sha256sum "${firmware}" "${firmware}.zip" > SHA256SUMS.txt)
+          cp docs/THIRD_PARTY_NOTICES.md release/THIRD_PARTY_NOTICES.md
+          cp docs/THIRD_PARTY_NOTICES.zh_CN.md release/THIRD_PARTY_NOTICES.zh_CN.md
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ steps.artifact_name.outputs.name }}
+          path: release/
+          if-no-files-found: error
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Download firmware artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: ${{ needs.build.outputs.artifact_name }}
+          path: release
+
+      - name: Create release (tag push)
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          name: "Cover Arts Launcher ${{ github.ref_name }}"
+          body_path: docs/releases/v1.0.0.md
+          files: |
+            release/${{ needs.build.outputs.firmware_file }}
+            release/${{ needs.build.outputs.firmware_zip }}
+            release/SHA256SUMS.txt
+            release/THIRD_PARTY_NOTICES.md
+            release/THIRD_PARTY_NOTICES.zh_CN.md
+          fail_on_unmatched_files: true
