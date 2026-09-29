@@ -40,6 +40,11 @@ function u32le(bytes, offset) {
     (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24)) >>> 0;
 }
 
+function writeU32le(bytes, offset, value) {
+  new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    .setUint32(offset, value >>> 0, true);
+}
+
 function leftRotate(value, shift) {
   return (value << shift) | (value >>> (32 - shift));
 }
@@ -147,6 +152,67 @@ export function parsePartitionTable(input) {
     break;
   }
   return { entries, md5Present, md5Valid };
+}
+
+export function encodePartitionTable(entries, { flashSize = 0x800000 } = {}) {
+  if (!Array.isArray(entries) || entries.length === 0 || entries.length > 95) {
+    throw new Error("Partition table must contain between 1 and 95 entries.");
+  }
+  if (!Number.isSafeInteger(flashSize) || flashSize <= 0) {
+    throw new Error("Flash size must be a positive safe integer.");
+  }
+
+  const labels = new Set();
+  const ranges = [];
+  const encoder = new TextEncoder();
+  const sector = new Uint8Array(PARTITION_TABLE_SIZE).fill(0xff);
+
+  entries.forEach((entry, index) => {
+    const label = encoder.encode(entry?.name ?? "");
+    if (label.length === 0 || label.length > 15 || labels.has(entry.name)) {
+      throw new Error(`Partition entry ${index + 1} has an invalid or duplicate label.`);
+    }
+    labels.add(entry.name);
+    for (const field of ["type", "subtype", "offset", "size"]) {
+      if (!Number.isSafeInteger(entry[field]) || entry[field] < 0) {
+        throw new Error(`Partition ${entry.name} has an invalid ${field}.`);
+      }
+    }
+    if (entry.type > 0xfe || entry.subtype > 0xff || entry.size === 0 ||
+        entry.offset + entry.size > flashSize) {
+      throw new Error(`Partition ${entry.name} is outside the configured Flash.`);
+    }
+    if (entry.offset % 0x1000 !== 0 || entry.size % 0x1000 !== 0 ||
+        (entry.type === 0 && entry.offset % 0x10000 !== 0)) {
+      throw new Error(`Partition ${entry.name} is not correctly aligned.`);
+    }
+    ranges.push({ name: entry.name, start: entry.offset, end: entry.offset + entry.size });
+
+    const cursor = index * PARTITION_ENTRY_SIZE;
+    sector[cursor] = 0xaa;
+    sector[cursor + 1] = 0x50;
+    sector[cursor + 2] = entry.type;
+    sector[cursor + 3] = entry.subtype;
+    writeU32le(sector, cursor + 4, entry.offset);
+    writeU32le(sector, cursor + 8, entry.size);
+    sector.set(label, cursor + 12);
+    sector[cursor + 12 + label.length] = 0;
+    writeU32le(sector, cursor + 28, entry.flags ?? 0);
+  });
+
+  ranges.sort((left, right) => left.start - right.start);
+  for (let index = 1; index < ranges.length; index++) {
+    if (ranges[index].start < ranges[index - 1].end) {
+      throw new Error(`Partitions ${ranges[index - 1].name} and ${ranges[index].name} overlap.`);
+    }
+  }
+
+  const marker = entries.length * PARTITION_ENTRY_SIZE;
+  sector[marker] = 0xeb;
+  sector[marker + 1] = 0xeb;
+  sector.fill(0xff, marker + 2, marker + 16);
+  sector.set(md5(sector.subarray(0, marker)), marker + 16);
+  return sector;
 }
 
 function inspectImageLayout(bytes, start, extensionLength) {

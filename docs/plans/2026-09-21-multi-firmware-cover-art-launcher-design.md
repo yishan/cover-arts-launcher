@@ -147,7 +147,7 @@ The production device experience contains five screens with state variants:
 | --- | --- | --- |
 | Boot/scan | Initialize display and inspect positions | Automatic transition |
 | Cover Art library | Select ready, empty, or incomplete positions | UP, DOWN, OK, long OK |
-| Position details | Show title, version, size, state, and source summary | Back; open help where applicable |
+| Position details | Show title, version, first/latest install time, and launch count | OK returns |
 | Installation/recovery help | Explain USB installation or repair | Back |
 | Launch/error transition | Confirm launch or explain verification failure | Automatic restart or return |
 
@@ -159,7 +159,7 @@ There is no persistent production text-list home screen. A text list may exist o
 
 | Region | Bounds | Content |
 | --- | --- | --- |
-| Header | `y=0..31` | `Play Library` left; battery right |
+| Header | `y=0..31` | Chinese-only Play Library label left; battery right |
 | Art stage | `y=36..199` | Center 120×160 cover and side peeks |
 | Title | `y=206..233` | Centered play title or position state |
 | Metadata | `y=236..253` | Version and `Position n / 3` |
@@ -187,9 +187,9 @@ The side peeks and the three position indicators are both required. Side peeks s
 | `OK` click | Launch | Installation help | Recovery help |
 | `OK` long | Position details | System/help details | Diagnostic details |
 
-Because physical controls are named UP/DOWN while the carousel is horizontal, the control legend must remain visible in v1: `UP Previous` and `DOWN Next`. Do not rely on animation alone to teach the mapping.
+Because physical controls are named UP/DOWN while the carousel is horizontal, a Chinese legend for changing position and confirming selection remains visible in v1. Do not rely on animation alone to teach the mapping.
 
-On every secondary screen—position details, installation help, recovery help, and diagnostics—`OK` long returns to the Cover Art library. `OK` click may activate the single primary action shown on that screen. Trial positions use the same mapping as ready positions: `OK` launches the trial and `OK` long opens details. A position with a valid app but invalid cover also uses the ready mapping.
+On every secondary screen—position details, installation help, recovery help, and diagnostics—`OK` click or long press returns to the Cover Art library. The screen explicitly labels the confirm action as returning to the library. Trial positions use the same mapping as ready positions: `OK` launches the trial and `OK` long opens details. A position with a valid app but invalid cover also uses the ready mapping.
 
 ### 6.4 Position-state visuals
 
@@ -309,6 +309,8 @@ Each position exposes these logical fields to the Launcher and Manager:
 | `cover_format`, dimensions, length, CRC | Strict cover decoding and bounds |
 | `generation` | Select newest valid A/B presentation bank |
 | `trust_source` | Exact install receipt, legacy SHA-bound cover, or compatibility mode |
+| `first_installed_at`, `last_installed_at` | Browser-recorded first and latest install/update times |
+| `launch_count` | Launcher-owned per-play count stored in NVS |
 
 V1 cover format is exactly 120×160 RGB565. The Launcher validates the app independently from the cover. A missing or corrupt cover never makes a valid app unbootable.
 
@@ -319,6 +321,8 @@ After writing and reading back a verified app, the Manager commits a 256-byte tr
 To preserve existing generic plays, migration order is exact receipt, then a legacy cover manifest bound to the current app SHA, then legacy generic compatibility mode. Compatibility mode remains launchable, but logs and the Manager must not label it `verified resident`; re-verifying the same app in the Manager can add a receipt. This policy means the exact image was verified through the local Manager. It is not a developer signature or a sandbox against malicious firmware.
 
 Trust banks occupy absolute addresses `0x7e0000..0x7e5fff` without changing the partition table. Erasing a position clears its app, both cover banks, and both trust banks. Complete-system migration clears all three positions' receipts.
+
+Receipt schema v2 adds the stable play identity, first installation time, latest installation/update time, and both UTC offsets while keeping the 256-byte size. Schema v1 remains readable and reports unknown times. The Manager preserves the first time only when the stable identity matches and does not change either time during metadata/cover-only repair. The Launcher records the launch count in NVS immediately before rebooting into the selected app; statistics failure is non-blocking.
 
 ### 10.2 Launch performance measurement
 

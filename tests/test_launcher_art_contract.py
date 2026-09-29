@@ -73,8 +73,13 @@ class LauncherArtContractTests(unittest.TestCase):
         self.assertIn('"点球决胜"', preview)
         level_one = gb2312_level_one_codepoints()
         self.assertEqual(len(level_one), 3755)
-        for character in "中文玩法点球决胜":
+        for character in "中文玩法点球决胜库位置版本准备就绪确认启动长按详情上下切换选择首次安装最近次数暂无记录返回修复":
             self.assertIn(ord(character), level_one)
+
+    def test_all_launcher_labels_use_the_chinese_font(self) -> None:
+        ui = (ROOT / "main/launcher_ui.c").read_text()
+        self.assertNotIn("&lv_font_montserrat_14", ui)
+        self.assertIn('lv_label_set_text(header, "玩法库")', ui)
 
     def test_browser_title_preflight_uses_the_same_glyph_inventory(self) -> None:
         generated = (ROOT / "tools/install-slot/title-glyphs.js").read_text()

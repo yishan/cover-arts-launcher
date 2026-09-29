@@ -1,6 +1,7 @@
 #include "launcher_ui.h"
 
 #include "launcher_cover_view.h"
+#include "launcher_time.h"
 #include "lvgl.h"
 
 #include <stdio.h>
@@ -28,6 +29,7 @@ LV_FONT_DECLARE(launcher_font_16_gb2312);
 static lv_obj_t *s_screen;
 static lv_obj_t *s_blank_screen;
 static lv_obj_t *s_battery;
+static lv_obj_t *s_shelf;
 static lv_obj_t *s_center_frame;
 static lv_obj_t *s_center_image;
 static lv_obj_t *s_left_image;
@@ -232,21 +234,21 @@ bool launcher_ui_create(void)
     lv_obj_set_style_bg_opa(s_screen, LV_OPA_COVER, 0);
 
     lv_obj_t *header = create_label(s_screen, 12, 8, 156, 20,
-                                    &lv_font_montserrat_14, COLOR_TEXT,
+                                    &launcher_font_16_gb2312, COLOR_TEXT,
                                     LV_TEXT_ALIGN_LEFT);
-    lv_label_set_text(header, "PLAY LIBRARY");
+    lv_label_set_text(header, "玩法库");
     s_battery = create_label(s_screen, 172, 8, 56, 20,
-                             &lv_font_montserrat_14, COLOR_MUTED,
+                             &launcher_font_16_gb2312, COLOR_MUTED,
                              LV_TEXT_ALIGN_RIGHT);
 
-    lv_obj_t *shelf = lv_obj_create(s_screen);
-    lv_obj_set_pos(shelf, 4, 32);
-    lv_obj_set_size(shelf, 232, 168);
-    lv_obj_set_style_bg_color(shelf, lv_color_hex(COLOR_SHELF), 0);
-    lv_obj_set_style_bg_opa(shelf, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(shelf, 0, 0);
-    lv_obj_set_style_radius(shelf, 8, 0);
-    lv_obj_set_style_pad_all(shelf, 0, 0);
+    s_shelf = lv_obj_create(s_screen);
+    lv_obj_set_pos(s_shelf, 4, 32);
+    lv_obj_set_size(s_shelf, 232, 168);
+    lv_obj_set_style_bg_color(s_shelf, lv_color_hex(COLOR_SHELF), 0);
+    lv_obj_set_style_bg_opa(s_shelf, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(s_shelf, 0, 0);
+    lv_obj_set_style_radius(s_shelf, 8, 0);
+    lv_obj_set_style_pad_all(s_shelf, 0, 0);
 
     s_left_image = create_image(s_screen, LAUNCHER_SIDE_LEFT_X,
                                 LAUNCHER_SIDE_Y, &s_left_descriptor);
@@ -267,20 +269,20 @@ bool launcher_ui_create(void)
     s_title = create_label(s_screen, 16, 204, 208, 24,
                            &launcher_font_16_gb2312, COLOR_TEXT,
                            LV_TEXT_ALIGN_CENTER);
-    s_metadata = create_label(s_screen, 16, 230, 208, 18,
-                              &lv_font_montserrat_14, COLOR_MUTED,
+    s_metadata = create_label(s_screen, 12, 230, 216, 20,
+                              &launcher_font_16_gb2312, COLOR_MUTED,
                               LV_TEXT_ALIGN_CENTER);
-    s_message = create_label(s_screen, 12, 248, 216, 34,
-                             &lv_font_montserrat_14, COLOR_TEXT,
+    s_message = create_label(s_screen, 12, 254, 216, 22,
+                             &launcher_font_16_gb2312, COLOR_TEXT,
                              LV_TEXT_ALIGN_CENTER);
     lv_label_set_long_mode(s_message, LV_LABEL_LONG_WRAP);
-    s_indicator = create_label(s_screen, 12, 282, 216, 18,
-                               &lv_font_montserrat_14, COLOR_FOCUS,
+    s_indicator = create_label(s_screen, 12, 260, 216, 24,
+                               &launcher_font_16_gb2312, COLOR_FOCUS,
                                LV_TEXT_ALIGN_CENTER);
-    s_controls = create_label(s_screen, 8, 301, 224, 18,
-                              &lv_font_montserrat_14, COLOR_MUTED,
+    s_controls = create_label(s_screen, 8, 288, 224, 24,
+                              &launcher_font_16_gb2312, COLOR_MUTED,
                               LV_TEXT_ALIGN_CENTER);
-    lv_label_set_text(s_controls, "UP/DOWN    OK SELECT");
+    lv_label_set_text(s_controls, "上下切换    确认选择");
 
     lv_screen_load(s_screen);
     if (previous != NULL && previous != s_screen && previous != s_blank_screen) {
@@ -292,118 +294,164 @@ bool launcher_ui_create(void)
 static const char *state_name(launcher_slot_state_t state)
 {
     switch (state) {
-    case LAUNCHER_SLOT_EMPTY: return "EMPTY";
-    case LAUNCHER_SLOT_INVALID: return "INCOMPLETE";
-    case LAUNCHER_SLOT_TRIAL: return "TRIAL";
-    case LAUNCHER_SLOT_READY: return "READY";
+    case LAUNCHER_SLOT_EMPTY: return "空位置";
+    case LAUNCHER_SLOT_INVALID: return "安装不完整";
+    case LAUNCHER_SLOT_TRIAL: return "待验证";
+    case LAUNCHER_SLOT_READY: return "准备就绪";
     }
-    return "UNKNOWN";
+    return "未知状态";
 }
 
-static void render_indicator(size_t selected)
+static void render_indicator(size_t selected, size_t slot_count)
 {
-    char text[24];
+    char text[40];
 
-    snprintf(text, sizeof(text), "%s  %s  %s",
-             selected == 0u ? "[1]" : " 1 ",
-             selected == 1u ? "[2]" : " 2 ",
-             selected == 2u ? "[3]" : " 3 ");
+    if (slot_count == 0u) {
+        snprintf(text, sizeof(text), "暂无玩法");
+    } else {
+        snprintf(text, sizeof(text), "位置 %u / %u",
+                 (unsigned)selected + 1u, (unsigned)slot_count);
+    }
     lv_label_set_text(s_indicator, text);
 }
 
 static void render_library(
     const launcher_model_t *model,
-    const launcher_cover_record_t covers[LAUNCHER_SLOT_COUNT],
-    const launcher_cover_source_t *source, const char *status_message)
+    const launcher_cover_record_t covers[LAUNCHER_MAX_SLOTS],
+    const launcher_cover_source_t sources[LAUNCHER_MAX_SLOTS],
+    const char *status_message)
 {
     launcher_cover_view_t view;
-    char metadata[80];
 
     launcher_cover_view_build(model, covers, &view);
-    load_center(&view.center, source);
-    load_peek(s_left_peek_pixels, &view.left, source, true);
-    load_peek(s_right_peek_pixels, &view.right, source, false);
+    load_center(&view.center, model->slot_count > 0u ?
+                &sources[view.center.slot_id] : NULL);
+    load_peek(s_left_peek_pixels, &view.left,
+              view.left.slot_id < model->slot_count ?
+              &sources[view.left.slot_id] : NULL, true);
+    load_peek(s_right_peek_pixels, &view.right,
+              view.right.slot_id < model->slot_count ?
+              &sources[view.right.slot_id] : NULL, false);
     lv_obj_invalidate(s_center_image);
     lv_obj_invalidate(s_left_image);
     lv_obj_invalidate(s_right_image);
     lv_obj_clear_flag(s_center_image, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_clear_flag(s_left_image, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_clear_flag(s_right_image, LV_OBJ_FLAG_HIDDEN);
+    if (view.left.slot_id < model->slot_count) {
+        lv_obj_clear_flag(s_left_image, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(s_left_image, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (view.right.slot_id < model->slot_count) {
+        lv_obj_clear_flag(s_right_image, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(s_right_image, LV_OBJ_FLAG_HIDDEN);
+    }
     lv_obj_clear_flag(s_center_frame, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_size(s_shelf, 232, 168);
+
+    lv_obj_set_pos(s_title, 16, 204);
+    lv_obj_set_size(s_title, 208, 24);
+    lv_obj_add_flag(s_metadata, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_pos(s_message, 12, 232);
+    lv_obj_set_size(s_message, 216, 22);
+    lv_obj_set_style_text_line_space(s_message, 0, 0);
 
     lv_label_set_text(s_title, view.center.title);
-    if (view.center.version != NULL && view.center.version[0] != '\0') {
-        snprintf(metadata, sizeof(metadata), "SLOT %u  |  %s  |  %s",
-                 (unsigned)view.center.slot_id + 1u, view.center.version,
-                 state_name(view.center.state));
-    } else {
-        snprintf(metadata, sizeof(metadata), "SLOT %u  |  %s",
-                 (unsigned)view.center.slot_id + 1u,
-                 state_name(view.center.state));
-    }
-    lv_label_set_text(s_metadata, metadata);
     if (status_message != NULL && status_message[0] != '\0') {
         lv_label_set_text(s_message, status_message);
     } else if (launcher_model_all_empty(model)) {
-        lv_label_set_text(s_message, "Connect to a computer\nto add a play");
+        lv_label_set_text(s_message, "连接电脑，安装玩法");
     } else if (view.center.state == LAUNCHER_SLOT_EMPTY) {
-        lv_label_set_text(s_message, "OK: installation help");
+        lv_label_set_text(s_message, "确认：查看安装帮助");
     } else if (view.center.state == LAUNCHER_SLOT_INVALID) {
-        lv_label_set_text(s_message, "OK: repair help");
+        lv_label_set_text(s_message, "确认：查看修复帮助");
     } else {
-        lv_label_set_text(s_message, "OK: launch  |  Hold: details");
+        lv_label_set_text(s_message, "确认：启动  长按：详情");
     }
     lv_obj_set_style_border_color(
         s_center_frame,
         lv_color_hex(view.center.state == LAUNCHER_SLOT_INVALID ?
                          COLOR_WARNING : COLOR_FOCUS), 0);
-    render_indicator(view.center.slot_id);
-    lv_label_set_text(s_controls, "UP/DOWN    OK SELECT");
+    render_indicator(view.center.slot_id, model->slot_count);
+    lv_label_set_text(s_controls, "上下切换    确认选择");
 }
 
-static void render_secondary(const launcher_model_t *model)
+static void render_secondary(
+    const launcher_model_t *model,
+    const launcher_cover_record_t covers[LAUNCHER_MAX_SLOTS])
 {
     const launcher_slot_info_t *slot = &model->slots[model->selected];
-    char metadata[80];
+    launcher_cover_view_t view;
+    char message[256];
+    char first_time[24] = "暂无记录";
+    char last_time[24] = "暂无记录";
+    char launch_count[24] = "暂无记录";
+
+    launcher_cover_view_build(model, covers, &view);
 
     lv_obj_add_flag(s_center_image, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_left_image, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_right_image, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_center_frame, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(s_metadata, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_size(s_shelf, 232, 226);
+    lv_obj_set_pos(s_title, 12, 46);
+    lv_obj_set_size(s_title, 216, 24);
+    lv_obj_set_pos(s_metadata, 12, 74);
+    lv_obj_set_size(s_metadata, 216, 24);
+    lv_obj_set_pos(s_message, 12, 100);
+    lv_obj_set_size(s_message, 216, 136);
+    lv_obj_set_style_text_line_space(s_message, 0, 0);
     switch (model->page) {
     case LAUNCHER_PAGE_DETAILS:
-        lv_label_set_text(s_title, slot->project_name[0] != '\0' ?
-                                      slot->project_name : "POSITION DETAILS");
-        snprintf(metadata, sizeof(metadata), "SLOT %u | %s | %lu bytes",
-                 (unsigned)model->selected + 1u, state_name(slot->state),
-                 (unsigned long)slot->image_size);
-        lv_label_set_text(s_metadata, metadata);
-        lv_label_set_text(s_message, "Firmware and position information");
+        lv_label_set_text(s_title, view.center.title);
+        lv_label_set_text(s_metadata, "玩法详情");
+        lv_obj_set_style_text_line_space(s_message, -8, 0);
+        (void)launcher_format_install_time(
+            first_time, sizeof(first_time), slot->first_installed_at,
+            slot->first_install_utc_offset_minutes);
+        (void)launcher_format_install_time(
+            last_time, sizeof(last_time), slot->last_installed_at,
+            slot->last_install_utc_offset_minutes);
+        if (slot->launch_count_valid) {
+            snprintf(launch_count, sizeof(launch_count), "%lu",
+                     (unsigned long)slot->launch_count);
+        }
+        snprintf(message, sizeof(message),
+                 "位置：%u  %s\n版本：%s\n首次安装：%s\n最近安装：%s\n启动次数：%s",
+                 (unsigned)model->selected + 1u,
+                 state_name(view.center.state),
+                 view.center.version != NULL && view.center.version[0] != '\0' ?
+                     view.center.version : "暂无记录",
+                 first_time, last_time, launch_count);
+        lv_label_set_text(s_message, message);
         break;
     case LAUNCHER_PAGE_INSTALL_HELP:
-        lv_label_set_text(s_title, "ADD A PLAY");
-        lv_label_set_text(s_metadata, "Connect this device to a computer");
-        lv_label_set_text(s_message, "Open Play Manager and choose a slot");
+        lv_label_set_text(s_title, "添加玩法");
+        lv_label_set_text(s_metadata, "请将设备连接到电脑");
+        lv_label_set_text(s_message, "打开玩法管理页面并选择安装位置");
         break;
     case LAUNCHER_PAGE_RECOVERY_HELP:
-        lv_label_set_text(s_title, "REPAIR POSITION");
-        lv_label_set_text(s_metadata, "Firmware is incomplete or invalid");
-        lv_label_set_text(s_message, "Reinstall it with Play Manager");
+        lv_label_set_text(s_title, "修复位置");
+        lv_label_set_text(s_metadata, "玩法安装不完整或无效");
+        lv_label_set_text(s_message, "请使用玩法管理页面重新安装");
         break;
     case LAUNCHER_PAGE_LIBRARY:
         return;
     }
-    render_indicator(model->selected);
-    lv_label_set_text(s_controls, "Hold OK to return to library");
+    render_indicator(model->selected, model->slot_count);
+    lv_label_set_text(s_controls, "确认：返回玩法库");
 }
 
 void launcher_ui_render(
     const launcher_model_t *model,
-    const launcher_cover_record_t covers[LAUNCHER_SLOT_COUNT],
-    const launcher_cover_source_t *cover_source, int battery_percent,
+    const launcher_cover_record_t covers[LAUNCHER_MAX_SLOTS],
+    const launcher_cover_source_t cover_sources[LAUNCHER_MAX_SLOTS],
+    int battery_percent,
     const char *status_message)
 {
-    if (s_screen == NULL || model == NULL || covers == NULL) {
+    if (s_screen == NULL || model == NULL || covers == NULL ||
+        cover_sources == NULL) {
         return;
     }
     if (battery_percent >= 0 && battery_percent <= 100) {
@@ -412,9 +460,9 @@ void launcher_ui_render(
         lv_label_set_text(s_battery, "--");
     }
     if (model->page == LAUNCHER_PAGE_LIBRARY) {
-        render_library(model, covers, cover_source, status_message);
+        render_library(model, covers, cover_sources, status_message);
     } else {
-        render_secondary(model);
+        render_secondary(model, covers);
     }
 }
 
@@ -428,6 +476,7 @@ void launcher_ui_destroy(void)
     }
     s_screen = NULL;
     s_battery = NULL;
+    s_shelf = NULL;
     s_center_frame = NULL;
     s_center_image = NULL;
     s_left_image = NULL;

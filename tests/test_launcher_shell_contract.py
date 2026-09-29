@@ -61,17 +61,24 @@ class LauncherShellContractTest(unittest.TestCase):
 
     def test_boot_reverifies_before_changing_target(self) -> None:
         body = function_body(self.boot, "launcher_boot_slot")
-        verify = body.index("esp_image_verify")
+        verify = body.index("launcher_slots_verify")
         select = body.index("esp_ota_set_boot_partition")
         restart = body.index("esp_restart")
         self.assertLess(verify, select)
         self.assertLess(select, restart)
 
     def test_ui_has_real_empty_library_and_no_demo_shell(self) -> None:
-        self.assertIn("Connect to a computer", self.ui)
-        self.assertIn("Empty position", self.cover_view)
+        self.assertIn("连接电脑", self.ui)
+        self.assertIn("空位置", self.cover_view)
         self.assertNotIn("ui_pixel", self.ui)
         self.assertNotIn("demo_", self.main)
+
+    def test_ui_hides_side_cards_not_present_in_the_cover_view(self) -> None:
+        body = function_body(self.ui, "render_library")
+        self.assertIn("view.left.slot_id < model->slot_count", body)
+        self.assertIn("view.right.slot_id < model->slot_count", body)
+        self.assertIn("lv_obj_add_flag(s_left_image, LV_OBJ_FLAG_HIDDEN)", body)
+        self.assertIn("lv_obj_add_flag(s_right_image, LV_OBJ_FLAG_HIDDEN)", body)
 
     def test_component_builds_launcher_sources(self) -> None:
         for source in (
@@ -80,11 +87,37 @@ class LauncherShellContractTest(unittest.TestCase):
             '"launcher_ui.c"',
             '"launcher_boot.c"',
             '"launcher_manifest.c"',
+            '"launcher_dynamic_sidecar.c"',
             '"launcher_trust_store.c"',
+            '"launcher_stats.c"',
+            '"launcher_time.c"',
         ):
             self.assertIn(source, self.cmake)
-        for dependency in ("app_update", "bootloader_support", "mbedtls"):
+        for dependency in ("app_update", "bootloader_support", "mbedtls", "nvs_flash"):
             self.assertIn(dependency, self.cmake)
+
+    def test_chinese_ui_and_persistent_details_are_wired(self) -> None:
+        for text in ("玩法库", "准备就绪", "确认：启动", "玩法详情",
+                     "首次安装", "最近安装", "启动次数", "确认：返回玩法库"):
+            self.assertIn(text, self.ui)
+        self.assertIn("launcher_stats_record_launch", self.boot)
+        self.assertIn("launcher_stats_read", self.main)
+
+    def test_library_hides_metadata_and_details_owns_slot_status(self) -> None:
+        library = function_body(self.ui, "render_library")
+        secondary = function_body(self.ui, "render_secondary")
+
+        self.assertIn(
+            "lv_obj_add_flag(s_metadata, LV_OBJ_FLAG_HIDDEN)", library
+        )
+        self.assertNotIn('"位置%u  版本%s  %s"', library)
+        self.assertIn(
+            "lv_obj_clear_flag(s_metadata, LV_OBJ_FLAG_HIDDEN)", secondary
+        )
+        self.assertIn('"位置：%u  %s\\n版本：%s', secondary)
+        self.assertIn(
+            "lv_obj_set_style_text_line_space(s_message, -8, 0)", secondary
+        )
 
 
 if __name__ == "__main__":

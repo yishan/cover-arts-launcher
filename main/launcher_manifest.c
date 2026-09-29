@@ -138,7 +138,7 @@ static bool manifest_is_valid(const launcher_cover_manifest_t *manifest)
     size_t source_id_length;
     size_t version_length;
 
-    if (manifest == NULL || manifest->slot_id >= LAUNCHER_SLOT_COUNT ||
+    if (manifest == NULL || manifest->slot_id >= LAUNCHER_LEGACY_SLOT_COUNT ||
         manifest->source_kind > LAUNCHER_SOURCE_PLAY_API ||
         manifest->width != LAUNCHER_COVER_WIDTH ||
         manifest->height != LAUNCHER_COVER_HEIGHT ||

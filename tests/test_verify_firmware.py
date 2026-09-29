@@ -32,10 +32,6 @@ LAUNCHER_PARTITIONS = (
     ("nvs", "data", "nvs", 0x9000, 0x6000),
     ("phy_init", "data", "phy", 0xF000, 0x1000),
     ("factory", "app", "factory", 0x10000, 0x170000),
-    ("ota_0", "app", "ota_0", 0x180000, 0x200000),
-    ("ota_1", "app", "ota_1", 0x380000, 0x200000),
-    ("ota_2", "app", "ota_2", 0x580000, 0x200000),
-    ("covers", "data", "0x40", 0x780000, 0x7E000),
     ("otadata", "data", "ota", 0x7FE000, 0x2000),
 )
 
@@ -117,7 +113,8 @@ class FirmwareLayoutTest(unittest.TestCase):
         self.assertEqual(ordered[-1][3] + ordered[-1][4], VERIFY.FLASH_SIZE)
 
         ota_sizes = [size for name, _, _, _, size in actual if name.startswith("ota_")]
-        self.assertEqual(ota_sizes, [0x200000, 0x200000, 0x200000])
+        self.assertEqual(ota_sizes, [])
+        self.assertEqual(actual[-1][3], 0x7FE000)
 
     def verify(
         self,

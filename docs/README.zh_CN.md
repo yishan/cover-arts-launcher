@@ -127,7 +127,7 @@ LICENSE                  仓库许可证
 GitHub 社区治理文档：[CONTRIBUTING.zh_CN.md](../.github/CONTRIBUTING.zh_CN.md)、[CODE_OF_CONDUCT.zh_CN.md](../.github/CODE_OF_CONDUCT.zh_CN.md)、[SECURITY.zh_CN.md](../.github/SECURITY.zh_CN.md)、[SUPPORT.zh_CN.md](../.github/SUPPORT.zh_CN.md)。
 
 Cover Arts Launcher 公开文档：[安装指南](installation.zh_CN.md)、
-[用户指南](user-guide.zh_CN.md)、[v1.0.0 发布说明](releases/v1.0.0.zh_CN.md)和
+[用户指南](user-guide.zh_CN.md)、[v1.3.1 发布说明](releases/v1.3.1.zh_CN.md)和
 [第三方声明](THIRD_PARTY_NOTICES.zh_CN.md)。
 
 > 注：本 README 只描述产品与仓库，不含给 AI 的执行说明；AI 开始开发前请先读根目录 `AGENTS.zh_CN.md`，再按任务路由读取相关文档。

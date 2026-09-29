@@ -149,6 +149,8 @@ export async function inspectSlotFast(loader, slotId) {
     return {
       slotId, state: "empty", sourceId: "", title: "", activeCoverBank: null, generation: 0,
       coverPayload: null, trusted: false, trustSource: null, activeTrustBank: null, trustGeneration: 0,
+      installIdentity: "", firstInstalledAt: 0, lastInstalledAt: 0,
+      firstUtcOffsetMinutes: 0, lastUtcOffsetMinutes: 0,
     };
   }
 
@@ -159,6 +161,8 @@ export async function inspectSlotFast(loader, slotId) {
     return {
       slotId, state: "invalid", sourceId: "", title: "", activeCoverBank: null, generation: 0,
       coverPayload: null, trusted: false, trustSource: null, activeTrustBank: null, trustGeneration: 0,
+      installIdentity: "", firstInstalledAt: 0, lastInstalledAt: 0,
+      firstUtcOffsetMinutes: 0, lastUtcOffsetMinutes: 0,
       diagnostic: error.message,
     };
   }
@@ -193,6 +197,11 @@ export async function inspectSlotFast(loader, slotId) {
     trustSource: selectedTrust ? "install-receipt" : selectedCover ? "legacy-cover" : "legacy-generic",
     activeTrustBank: selectedTrust?.bank ?? null,
     trustGeneration: selectedTrust?.record.generation ?? 0,
+    installIdentity: selectedTrust?.record.sourceId ?? "",
+    firstInstalledAt: selectedTrust?.record.firstInstalledAt ?? 0,
+    lastInstalledAt: selectedTrust?.record.lastInstalledAt ?? 0,
+    firstUtcOffsetMinutes: selectedTrust?.record.firstUtcOffsetMinutes ?? 0,
+    lastUtcOffsetMinutes: selectedTrust?.record.lastUtcOffsetMinutes ?? 0,
     imageLength: selectedTrust?.record.imageLength ?? null,
     appShaBytes,
   };
@@ -208,6 +217,8 @@ export async function inspectSlot(loader, slotId) {
     return {
       slotId, state: "empty", sourceId: "", title: "", activeCoverBank: null, generation: 0,
       coverPayload: null, trusted: false, trustSource: null, activeTrustBank: null, trustGeneration: 0,
+      installIdentity: "", firstInstalledAt: 0, lastInstalledAt: 0,
+      firstUtcOffsetMinutes: 0, lastUtcOffsetMinutes: 0,
     };
   }
 
@@ -228,6 +239,11 @@ export async function inspectSlot(loader, slotId) {
       trustSource: null,
       activeTrustBank: null,
       trustGeneration: 0,
+      installIdentity: "",
+      firstInstalledAt: 0,
+      lastInstalledAt: 0,
+      firstUtcOffsetMinutes: 0,
+      lastUtcOffsetMinutes: 0,
       diagnostic: error.message,
     };
   }
@@ -261,6 +277,11 @@ export async function inspectSlot(loader, slotId) {
     trustSource: selectedTrust ? "install-receipt" : selected ? "legacy-cover" : "legacy-generic",
     activeTrustBank: selectedTrust?.bank ?? null,
     trustGeneration: selectedTrust?.record.generation ?? 0,
+    installIdentity: selectedTrust?.record.sourceId ?? "",
+    firstInstalledAt: selectedTrust?.record.firstInstalledAt ?? 0,
+    lastInstalledAt: selectedTrust?.record.lastInstalledAt ?? 0,
+    firstUtcOffsetMinutes: selectedTrust?.record.firstUtcOffsetMinutes ?? 0,
+    lastUtcOffsetMinutes: selectedTrust?.record.lastUtcOffsetMinutes ?? 0,
     imageLength: image.length,
     appShaBytes,
   };

@@ -535,13 +535,39 @@ async function writeCover({ slot, plan, payload, title, version, sourceId, sourc
   if (!selected) throw new Error("封面未通过 Launcher 的 App SHA 与 payload CRC 规则。");
 }
 
-async function writeTrustReceipt({ slot, plan, appShaBytes, imageLength }) {
+async function installIdentityFor(sourceId, title) {
+  if (sourceId) return sourceId;
+  const digest = await sha256(new TextEncoder().encode(`local:${title}`));
+  return `local-title:${toHex(digest).slice(0, 32)}`;
+}
+
+async function writeTrustReceipt({ slot, plan, appShaBytes, imageLength,
+  sourceId, title, installEvent = true }) {
   const generation = (slot.trustGeneration + 1) >>> 0;
+  const identity = installEvent
+    ? await installIdentityFor(sourceId, title)
+    : (slot.installIdentity || await installIdentityFor(sourceId, title));
+  const now = Math.floor(Date.now() / 1000);
+  const utcOffset = -new Date().getTimezoneOffset();
+  const samePlay = slot.installIdentity === identity && slot.firstInstalledAt > 0;
+  const firstInstalledAt = installEvent
+    ? (samePlay ? slot.firstInstalledAt : now)
+    : slot.firstInstalledAt;
+  const lastInstalledAt = installEvent ? now : slot.lastInstalledAt;
+  const firstUtcOffsetMinutes = installEvent
+    ? (samePlay ? slot.firstUtcOffsetMinutes : utcOffset)
+    : slot.firstUtcOffsetMinutes;
+  const lastUtcOffsetMinutes = installEvent ? utcOffset : slot.lastUtcOffsetMinutes;
   const record = encodeTrustRecord({
     generation,
     slotId: slot.slotId,
     imageLength,
     firmwareSha256: appShaBytes,
+    firstInstalledAt,
+    lastInstalledAt,
+    firstUtcOffsetMinutes,
+    lastUtcOffsetMinutes,
+    sourceId: identity,
   });
   await eraseRegion(plan.trust.address, plan.trust.eraseSize);
   const segment = { address: plan.trust.address, data: record };
@@ -635,6 +661,8 @@ async function installPlay() {
           plan,
           appShaBytes: state.preparedPlay.appShaBytes,
           imageLength: state.preparedPlay.app.length,
+          sourceId: state.preparedPlay.sourceId,
+          title: state.preparedPlay.title,
         });
       },
       async writeCover() {
@@ -723,6 +751,9 @@ async function repairMetadataCover() {
       plan,
       appShaBytes: state.preparedPlay.appShaBytes,
       imageLength: state.preparedPlay.app.length,
+      sourceId: state.preparedPlay.sourceId,
+      title: state.preparedPlay.title,
+      installEvent: false,
     });
     await writeCover({
       slot,

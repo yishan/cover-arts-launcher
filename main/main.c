@@ -1,8 +1,10 @@
-/* Factory Launcher shell: scan three positions, render, and switch by OTA. */
+/* Factory Launcher shell: scan the dynamic play library and switch by OTA. */
 #include "launcher_boot.h"
 #include "launcher_cover_store.h"
+#include "launcher_dynamic_sidecar.h"
 #include "launcher_model.h"
 #include "launcher_slots.h"
+#include "launcher_stats.h"
 #include "launcher_trust_store.h"
 #include "launcher_ui.h"
 
@@ -19,6 +21,9 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 
+#include <stdio.h>
+#include <string.h>
+
 #define INPUT_QUEUE_DEPTH 8u
 
 typedef struct {
@@ -28,16 +33,18 @@ typedef struct {
 
 static const char *TAG = "launcher";
 static launcher_model_t s_model;
-static launcher_slot_info_t s_slots[LAUNCHER_SLOT_COUNT];
-static launcher_cover_record_t s_covers[LAUNCHER_SLOT_COUNT];
-static launcher_cover_source_t s_cover_source;
+static launcher_slot_info_t s_slots[LAUNCHER_MAX_SLOTS];
+static launcher_cover_record_t s_covers[LAUNCHER_MAX_SLOTS];
+static launcher_cover_source_t s_cover_sources[LAUNCHER_MAX_SLOTS];
 static const esp_partition_t *s_cover_partition;
+static size_t s_slot_count;
 static QueueHandle_t s_input_queue;
 static TaskHandle_t s_input_task;
 static volatile bool s_input_ready;
 static bool s_battery_available;
 static unsigned s_selection_count;
 static uint32_t s_heap_after_ui;
+static bool s_stats_available;
 
 static bool read_cover_partition(void *context, size_t offset,
                                  void *destination, size_t length)
@@ -49,46 +56,75 @@ static bool read_cover_partition(void *context, size_t offset,
            esp_partition_read(partition, offset, destination, length) == ESP_OK;
 }
 
-static const launcher_cover_source_t *cover_source(void)
-{
-    return s_cover_partition != NULL ? &s_cover_source : NULL;
-}
-
 static void scan_covers(void)
 {
+    memset(s_covers, 0, sizeof(s_covers));
+    memset(s_cover_sources, 0, sizeof(s_cover_sources));
     s_cover_partition = esp_partition_find_first(
         ESP_PARTITION_TYPE_DATA, 0x40, "covers");
-    s_cover_source = (launcher_cover_source_t){0};
     if (s_cover_partition != NULL) {
-        s_cover_source.read = read_cover_partition;
-        s_cover_source.context = (void *)s_cover_partition;
-        s_cover_source.size = s_cover_partition->size;
+        launcher_cover_source_t legacy = {
+            .read = read_cover_partition,
+            .context = (void *)s_cover_partition,
+            .size = s_cover_partition->size,
+        };
+        for (size_t slot = 0u; slot < s_slot_count; ++slot) {
+            s_cover_sources[slot] = legacy;
+            if (s_slots[slot].state == LAUNCHER_SLOT_READY ||
+                s_slots[slot].state == LAUNCHER_SLOT_TRIAL) {
+                (void)launcher_cover_store_select(
+                    &s_cover_sources[slot], (uint8_t)slot,
+                    s_slots[slot].image_sha256, &s_covers[slot]);
+            }
+        }
+        return;
     }
-    for (size_t slot = 0u; slot < LAUNCHER_SLOT_COUNT; ++slot) {
-        s_covers[slot] = (launcher_cover_record_t){0};
-        if (s_cover_partition != NULL &&
-            (s_slots[slot].state == LAUNCHER_SLOT_READY ||
-             s_slots[slot].state == LAUNCHER_SLOT_TRIAL)) {
-            (void)launcher_cover_store_select(&s_cover_source, (uint8_t)slot,
-                                              s_slots[slot].image_sha256,
-                                              &s_covers[slot]);
+    for (size_t slot = 0u; slot < s_slot_count; ++slot) {
+        const esp_partition_t *partition = launcher_slots_partition(slot);
+        launcher_dynamic_record_t record;
+        if (partition == NULL) {
+            continue;
+        }
+        s_cover_sources[slot] = (launcher_cover_source_t){
+            .read = read_cover_partition,
+            .context = (void *)partition,
+            .size = partition->size,
+        };
+        if (launcher_dynamic_sidecar_select(
+                &s_cover_sources[slot], (uint8_t)slot, partition->size,
+                &record)) {
+            (void)launcher_dynamic_sidecar_cover(
+                &s_cover_sources[slot], partition->size, &record,
+                &s_covers[slot]);
         }
     }
 }
 
 static void classify_slot_trust(void)
 {
-    for (size_t slot = 0u; slot < LAUNCHER_SLOT_COUNT; ++slot) {
+    for (size_t slot = 0u; slot < s_slot_count; ++slot) {
         launcher_trust_record_t receipt;
 
         if (s_slots[slot].state != LAUNCHER_SLOT_READY &&
             s_slots[slot].state != LAUNCHER_SLOT_TRIAL) {
             continue;
         }
+        if (s_slots[slot].trust_source == LAUNCHER_TRUST_DYNAMIC_SIDECAR) {
+            continue;
+        }
         if (s_cover_partition != NULL && launcher_trust_store_select(
-                &s_cover_source, (uint8_t)slot, s_slots[slot].image_sha256,
+                &s_cover_sources[slot], (uint8_t)slot,
+                s_slots[slot].image_sha256,
                 s_slots[slot].image_size, &receipt)) {
             s_slots[slot].trust_source = LAUNCHER_TRUST_INSTALL_RECEIPT;
+            s_slots[slot].first_installed_at = receipt.first_installed_at;
+            s_slots[slot].last_installed_at = receipt.last_installed_at;
+            s_slots[slot].first_install_utc_offset_minutes =
+                receipt.first_install_utc_offset_minutes;
+            s_slots[slot].last_install_utc_offset_minutes =
+                receipt.last_install_utc_offset_minutes;
+            snprintf(s_slots[slot].source_id,
+                     sizeof(s_slots[slot].source_id), "%s", receipt.source_id);
         } else if (s_covers[slot].valid) {
             /* V0.1 migration: an older SHA-bound cover is a local receipt. */
             s_slots[slot].trust_source = LAUNCHER_TRUST_LEGACY_COVER;
@@ -97,6 +133,33 @@ static void classify_slot_trust(void)
             s_slots[slot].trust_source = LAUNCHER_TRUST_LEGACY_GENERIC;
             ESP_LOGW(TAG, "Position %u uses legacy generic trust",
                      (unsigned)slot + 1u);
+        }
+        if (s_slots[slot].source_id[0] == '\0' && s_covers[slot].valid) {
+            snprintf(s_slots[slot].source_id,
+                     sizeof(s_slots[slot].source_id), "%s",
+                     s_covers[slot].manifest.source_id);
+        }
+    }
+}
+
+static void load_launch_counts(void)
+{
+    if (!s_stats_available) {
+        return;
+    }
+    for (size_t slot = 0u; slot < s_slot_count; ++slot) {
+        esp_err_t error;
+
+        if (!launcher_slot_is_bootable(s_slots[slot].state)) {
+            continue;
+        }
+        error = launcher_stats_read(slot, s_slots[slot].source_id,
+                                    s_slots[slot].image_sha256,
+                                    &s_slots[slot].launch_count);
+        s_slots[slot].launch_count_valid = error == ESP_OK;
+        if (error != ESP_OK) {
+            ESP_LOGW(TAG, "Position %u launch count unavailable: %s",
+                     (unsigned)slot + 1u, esp_err_to_name(error));
         }
     }
 }
@@ -134,18 +197,19 @@ static void render(const char *status_message)
         ESP_LOGW(TAG, "LVGL lock timeout while rendering");
         return;
     }
-    launcher_ui_render(&s_model, s_covers, cover_source(), battery_percent(),
+    launcher_ui_render(&s_model, s_covers, s_cover_sources, battery_percent(),
                        status_message);
     bsp_lvgl_unlock();
 }
 
 static void refresh_slots(void)
 {
-    esp_err_t error = launcher_slots_scan(s_slots);
+    esp_err_t error = launcher_slots_scan(s_slots, &s_slot_count);
 
     scan_covers();
     classify_slot_trust();
-    launcher_model_refresh(&s_model, s_slots);
+    load_launch_counts();
+    launcher_model_refresh(&s_model, s_slots, s_slot_count);
     if (error != ESP_OK) {
         ESP_LOGW(TAG, "Position scan completed with error: %s",
                  esp_err_to_name(error));
@@ -163,12 +227,13 @@ static void process_input(const input_event_t *input)
     result = launcher_model_handle(&s_model, mapped);
     switch (result.action) {
     case LAUNCHER_ACTION_LAUNCH: {
-        render("Verifying firmware...");
-        esp_err_t error = launcher_boot_slot(result.slot_id);
+        render("正在验证玩法…");
+        esp_err_t error = launcher_boot_slot(
+            result.slot_id, s_slots[result.slot_id].source_id);
         ESP_LOGE(TAG, "Position %u launch failed: %s",
                  (unsigned)result.slot_id + 1u, esp_err_to_name(error));
         refresh_slots();
-        render("Launch failed; firmware was not selected");
+        render("启动失败，未切换玩法");
         break;
     }
     case LAUNCHER_ACTION_SELECTION_CHANGED:
@@ -257,6 +322,12 @@ void app_main(void)
     int64_t started_at = esp_timer_get_time();
 
     ESP_LOGI(TAG, "Cover Art Launcher bring-up shell");
+    error = launcher_stats_init();
+    s_stats_available = error == ESP_OK;
+    if (!s_stats_available) {
+        ESP_LOGW(TAG, "Launch statistics unavailable: %s",
+                 esp_err_to_name(error));
+    }
     (void)bsp_i2c_init();
     if (bsp_display_init() != ESP_OK || bsp_lvgl_init() == NULL) {
         ESP_LOGE(TAG,
@@ -266,17 +337,18 @@ void app_main(void)
     }
     bsp_display_backlight(100);
 
-    error = launcher_slots_scan(s_slots);
+    error = launcher_slots_scan(s_slots, &s_slot_count);
     if (error != ESP_OK) {
         ESP_LOGW(TAG, "Initial position scan error: %s", esp_err_to_name(error));
     }
     scan_covers();
     classify_slot_trust();
+    load_launch_counts();
     ESP_LOGI(TAG, "PERF startup scan+trust=%lld ms",
              (long long)((esp_timer_get_time() - started_at) / 1000));
     ESP_LOGI(TAG, "heap after cover scan: %lu",
              (unsigned long)esp_get_free_heap_size());
-    launcher_model_init(&s_model, s_slots);
+    launcher_model_init(&s_model, s_slots, s_slot_count);
     s_battery_available = bsp_battery_init() == ESP_OK;
 
     ESP_LOGI(TAG, "heap before UI: %lu",
@@ -287,7 +359,7 @@ void app_main(void)
     }
     bool ui_ready = launcher_ui_create();
     if (ui_ready) {
-        launcher_ui_render(&s_model, s_covers, cover_source(),
+        launcher_ui_render(&s_model, s_covers, s_cover_sources,
                            battery_percent(), NULL);
     }
     bsp_lvgl_unlock();
@@ -302,7 +374,7 @@ void app_main(void)
     error = start_input();
     if (error != ESP_OK) {
         ESP_LOGE(TAG, "Buttons unavailable: %s", esp_err_to_name(error));
-        render("Buttons unavailable; restart after repair");
+        render("按键不可用，请修复后重启");
         return;
     }
     ESP_LOGI(TAG, "Ready: position=%u all_empty=%d battery=%d",

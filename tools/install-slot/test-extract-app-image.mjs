@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   MAX_APP_IMAGE_SIZE,
+  encodePartitionTable,
   espImageLength,
   extractAppImage,
   parsePartitionTable,
@@ -88,6 +89,33 @@ test("extracts the factory app from a merged image with valid partition MD5", ()
   assert.equal(result.kind, "merged");
   assert.equal(result.appOffset, 0x10000);
   assert.deepEqual(result.data, app);
+});
+
+test("encodes a partition table that round-trips with a valid MD5", () => {
+  const entries = [
+    { name: "nvs", type: 1, subtype: 2, offset: 0x9000, size: 0x6000 },
+    { name: "factory", type: 0, subtype: 0, offset: 0x10000, size: 0x170000 },
+    { name: "ota_0", type: 0, subtype: 0x10, offset: 0x180000, size: 0xc0000 },
+    { name: "otadata", type: 1, subtype: 0, offset: 0x7fe000, size: 0x2000 },
+  ];
+  const decoded = parsePartitionTable(encodePartitionTable(entries));
+  assert.equal(decoded.md5Present, true);
+  assert.equal(decoded.md5Valid, true);
+  assert.deepEqual(decoded.entries, entries);
+});
+
+test("partition encoder rejects overlaps, duplicate labels, and bad app alignment", () => {
+  assert.throws(() => encodePartitionTable([
+    { name: "one", type: 1, subtype: 2, offset: 0x9000, size: 0x6000 },
+    { name: "two", type: 1, subtype: 1, offset: 0xe000, size: 0x2000 },
+  ]), /overlap/);
+  assert.throws(() => encodePartitionTable([
+    { name: "same", type: 1, subtype: 2, offset: 0x9000, size: 0x1000 },
+    { name: "same", type: 1, subtype: 1, offset: 0xa000, size: 0x1000 },
+  ]), /duplicate label/);
+  assert.throws(() => encodePartitionTable([
+    { name: "ota_0", type: 0, subtype: 0x10, offset: 0x181000, size: 0x10000 },
+  ]), /aligned/);
 });
 
 test("rejects a merged image with a bad partition-table MD5", () => {

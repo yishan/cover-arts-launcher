@@ -44,7 +44,9 @@ else
         "${repo_root}/main/launcher_cover_view.c" \
         "${repo_root}/main/launcher_manifest.c" \
         "${repo_root}/main/launcher_model.c" \
+        "${repo_root}/main/launcher_time.c" \
         "${repo_root}/main/launcher_ui.c" \
+        "${repo_root}/assets/fonts/launcher_source_han_sans_sc_16_gb2312.c" \
         "${lvgl_archive}" -lm -o "${preview_bin}"
 fi
 "${preview_bin}" "${output_dir}"

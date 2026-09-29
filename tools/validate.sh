@@ -45,6 +45,10 @@ run_static_checks() {
         -o "${test_dir}/test_launcher_trust_store"
     "${test_dir}/test_launcher_trust_store"
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_launcher_time.c main/launcher_time.c \
+        -o "${test_dir}/test_launcher_time"
+    "${test_dir}/test_launcher_time"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
         tests/test_launcher_cover_view.c main/launcher_cover_view.c \
         main/launcher_cover_store.c main/launcher_manifest.c \
         main/launcher_model.c -o "${test_dir}/test_launcher_cover_view"

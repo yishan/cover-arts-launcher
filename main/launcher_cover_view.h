@@ -21,7 +21,7 @@ typedef struct {
 
 void launcher_cover_view_build(
     const launcher_model_t *model,
-    const launcher_cover_record_t covers[LAUNCHER_SLOT_COUNT],
+    const launcher_cover_record_t covers[LAUNCHER_MAX_SLOTS],
     launcher_cover_view_t *out);
 
 #endif

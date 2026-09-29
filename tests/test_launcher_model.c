@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#define TEST_SLOT_COUNT 3u
+
 static launcher_slot_info_t slot(launcher_slot_state_t state, const char *name)
 {
     launcher_slot_info_t info = { .state = state };
@@ -16,14 +18,14 @@ static launcher_slot_info_t slot(launcher_slot_state_t state, const char *name)
 
 static void test_wraparound_visits_every_position(void)
 {
-    launcher_slot_info_t slots[LAUNCHER_SLOT_COUNT] = {
+    launcher_slot_info_t slots[TEST_SLOT_COUNT] = {
         slot(LAUNCHER_SLOT_READY, "One"),
         slot(LAUNCHER_SLOT_EMPTY, ""),
         slot(LAUNCHER_SLOT_INVALID, ""),
     };
     launcher_model_t model;
 
-    launcher_model_init(&model, slots);
+    launcher_model_init(&model, slots, TEST_SLOT_COUNT);
     assert(model.selected == 0u);
     assert(launcher_model_handle(&model, LAUNCHER_INPUT_UP).action ==
            LAUNCHER_ACTION_SELECTION_CHANGED);
@@ -35,16 +37,16 @@ static void test_wraparound_visits_every_position(void)
 
 static void test_all_empty_is_stable_and_never_launches(void)
 {
-    launcher_slot_info_t slots[LAUNCHER_SLOT_COUNT] = {
+    launcher_slot_info_t slots[TEST_SLOT_COUNT] = {
         slot(LAUNCHER_SLOT_EMPTY, ""),
         slot(LAUNCHER_SLOT_EMPTY, ""),
         slot(LAUNCHER_SLOT_EMPTY, ""),
     };
     launcher_model_t model;
 
-    launcher_model_init(&model, slots);
+    launcher_model_init(&model, slots, TEST_SLOT_COUNT);
     assert(launcher_model_all_empty(&model));
-    for (size_t index = 0; index < LAUNCHER_SLOT_COUNT; ++index) {
+    for (size_t index = 0; index < TEST_SLOT_COUNT; ++index) {
         launcher_result_t result = launcher_model_handle(&model, LAUNCHER_INPUT_OK);
         assert(result.action == LAUNCHER_ACTION_SHOW_INSTALL_HELP);
         assert(model.page == LAUNCHER_PAGE_INSTALL_HELP);
@@ -57,14 +59,14 @@ static void test_all_empty_is_stable_and_never_launches(void)
 
 static void test_bootable_and_invalid_actions(void)
 {
-    launcher_slot_info_t slots[LAUNCHER_SLOT_COUNT] = {
+    launcher_slot_info_t slots[TEST_SLOT_COUNT] = {
         slot(LAUNCHER_SLOT_READY, "Ready"),
         slot(LAUNCHER_SLOT_TRIAL, "Trial"),
         slot(LAUNCHER_SLOT_INVALID, "Broken"),
     };
     launcher_model_t model;
 
-    launcher_model_init(&model, slots);
+    launcher_model_init(&model, slots, TEST_SLOT_COUNT);
     assert(launcher_model_handle(&model, LAUNCHER_INPUT_OK).action ==
            LAUNCHER_ACTION_LAUNCH);
     launcher_model_handle(&model, LAUNCHER_INPUT_DOWN);
@@ -81,21 +83,21 @@ static void test_bootable_and_invalid_actions(void)
 
 static void test_refresh_preserves_selection_and_updates_slots(void)
 {
-    launcher_slot_info_t before[LAUNCHER_SLOT_COUNT] = {
+    launcher_slot_info_t before[TEST_SLOT_COUNT] = {
         slot(LAUNCHER_SLOT_EMPTY, ""),
         slot(LAUNCHER_SLOT_READY, "Old"),
         slot(LAUNCHER_SLOT_EMPTY, ""),
     };
-    launcher_slot_info_t after[LAUNCHER_SLOT_COUNT] = {
+    launcher_slot_info_t after[TEST_SLOT_COUNT] = {
         slot(LAUNCHER_SLOT_READY, "New"),
         slot(LAUNCHER_SLOT_INVALID, "Old"),
         slot(LAUNCHER_SLOT_EMPTY, ""),
     };
     launcher_model_t model;
 
-    launcher_model_init(&model, before);
+    launcher_model_init(&model, before, TEST_SLOT_COUNT);
     launcher_model_handle(&model, LAUNCHER_INPUT_DOWN);
-    launcher_model_refresh(&model, after);
+    launcher_model_refresh(&model, after, TEST_SLOT_COUNT);
     assert(model.selected == 1u);
     assert(model.slots[0].state == LAUNCHER_SLOT_READY);
     assert(strcmp(model.slots[0].project_name, "New") == 0);
@@ -105,20 +107,20 @@ static void test_refresh_preserves_selection_and_updates_slots(void)
 
 static void test_details_and_secondary_back(void)
 {
-    launcher_slot_info_t slots[LAUNCHER_SLOT_COUNT] = {
+    launcher_slot_info_t slots[TEST_SLOT_COUNT] = {
         slot(LAUNCHER_SLOT_READY, "One"),
         slot(LAUNCHER_SLOT_EMPTY, ""),
         slot(LAUNCHER_SLOT_EMPTY, ""),
     };
     launcher_model_t model;
 
-    launcher_model_init(&model, slots);
+    launcher_model_init(&model, slots, TEST_SLOT_COUNT);
     assert(launcher_model_handle(&model, LAUNCHER_INPUT_OK_LONG).action ==
            LAUNCHER_ACTION_SHOW_DETAILS);
     assert(model.page == LAUNCHER_PAGE_DETAILS);
     assert(launcher_model_handle(&model, LAUNCHER_INPUT_DOWN).action ==
            LAUNCHER_ACTION_NONE);
-    assert(launcher_model_handle(&model, LAUNCHER_INPUT_OK_LONG).action ==
+    assert(launcher_model_handle(&model, LAUNCHER_INPUT_OK).action ==
            LAUNCHER_ACTION_SHOW_LIBRARY);
     assert(model.page == LAUNCHER_PAGE_LIBRARY);
 }

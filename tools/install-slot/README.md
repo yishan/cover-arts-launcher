@@ -99,6 +99,18 @@ legacy SHA-bound cover can act as a migration receipt. Existing generic plays
 with neither remain launchable in compatibility mode but are not labelled
 `verified resident`.
 
+The current receipt also stores the first installation time and the most recent
+installation/update time supplied by the browser, including its UTC offset. An
+update of the same stable play identity preserves the first time and refreshes
+the most recent time. Older receipts remain valid and appear as `No record`
+until that play is installed or updated again. Metadata/cover-only repair does
+not create a false installation timestamp.
+
+The Launcher stores a per-play launch count in its own NVS immediately before
+switching to the selected app. Replacing a position with a different identity
+starts that position's displayed count at zero. A statistics write failure is
+logged but never blocks a verified play from launching.
+
 Before any write, the title field checks UTF-8 length and character coverage
 against the Launcher's exact font inventory. Unsupported glyphs are shown with
 their Unicode code points and block installation, avoiding placeholder boxes on
@@ -121,8 +133,10 @@ commit `994caaf52357d97323bffb82b2db9cc784afb1eb`. Its MIT notice is preserved i
 is the official `esptool-js` 0.6.1 `bundle.js`, pinned exactly in the lockfile and
 vendored as `vendor/esptool-js-0.6.1.js`; its Apache-2.0 notice is preserved as
 `vendor/LICENSE.esptool-js.txt`. Regenerate both files with
-`npm run vendor:esptool`. Local tests define this project's partition, size,
-manifest, write-scope, runtime version, and recovery contracts.
+`npm run vendor:esptool`. The previous 0.5.6 runtime and support files remain only
+as a temporary rollback path and are not imported by the application. Local
+tests define this project's partition, size, manifest, write-scope, runtime
+version, and recovery contracts.
 
 Host tests do not replace device acceptance. Before the Web Serial gate is
 complete, test a successful complete install, cable/power interruption during

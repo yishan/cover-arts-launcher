@@ -3,6 +3,7 @@
 #include "launcher_model.h"
 #include "launcher_cover_store.h"
 #include "launcher_slots.h"
+#include "launcher_stats.h"
 #include "launcher_trust_store.h"
 
 #include "esp_image_format.h"
@@ -37,6 +38,9 @@ static launcher_trust_source_t slot_trust_source(
     launcher_trust_record_t receipt;
     launcher_cover_record_t legacy_cover;
 
+    if (slot != NULL && slot->trust_source == LAUNCHER_TRUST_DYNAMIC_SIDECAR) {
+        return LAUNCHER_TRUST_DYNAMIC_SIDECAR;
+    }
     if (covers != NULL && slot != NULL && launcher_trust_store_select(
             &source, (uint8_t)slot_id, slot->image_sha256,
             slot->image_size, &receipt)) {
@@ -49,12 +53,10 @@ static launcher_trust_source_t slot_trust_source(
     return LAUNCHER_TRUST_LEGACY_GENERIC;
 }
 
-esp_err_t launcher_boot_slot(size_t slot_id)
+esp_err_t launcher_boot_slot(size_t slot_id, const char *source_id)
 {
     launcher_slot_info_t slot;
     const esp_partition_t *partition;
-    esp_partition_pos_t position;
-    esp_image_metadata_t metadata;
     esp_err_t error;
     int64_t started_at = esp_timer_get_time();
     launcher_trust_source_t trust_source;
@@ -82,16 +84,21 @@ esp_err_t launcher_boot_slot(size_t slot_id)
     if (partition == NULL) {
         return ESP_ERR_NOT_FOUND;
     }
-    position.offset = partition->address;
-    position.size = partition->size;
-    if (esp_image_verify(ESP_IMAGE_VERIFY, &position, &metadata) != ESP_OK) {
-        return ESP_ERR_OTA_VALIDATE_FAILED;
+    error = launcher_slots_verify(slot_id, &slot);
+    if (error != ESP_OK) {
+        return error;
     }
     ESP_LOGI(TAG, "PERF slot=%u verify=%lld ms", (unsigned)slot_id + 1u,
              (long long)((esp_timer_get_time() - started_at) / 1000));
     error = esp_ota_set_boot_partition(partition);
     if (error != ESP_OK) {
         return error;
+    }
+    error = launcher_stats_record_launch(slot_id, source_id,
+                                         slot.image_sha256, NULL);
+    if (error != ESP_OK) {
+        ESP_LOGW(TAG, "Position %u launch count was not saved: %s",
+                 (unsigned)slot_id + 1u, esp_err_to_name(error));
     }
     ESP_LOGI(TAG, "PERF slot=%u restart=%lld ms", (unsigned)slot_id + 1u,
              (long long)((esp_timer_get_time() - started_at) / 1000));

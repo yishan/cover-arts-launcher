@@ -12,8 +12,9 @@ bool launcher_ui_create(void);
 /** Render current model state. Caller must hold the LVGL lock. */
 void launcher_ui_render(
     const launcher_model_t *model,
-    const launcher_cover_record_t covers[LAUNCHER_SLOT_COUNT],
-    const launcher_cover_source_t *cover_source, int battery_percent,
+    const launcher_cover_record_t covers[LAUNCHER_MAX_SLOTS],
+    const launcher_cover_source_t cover_sources[LAUNCHER_MAX_SLOTS],
+    int battery_percent,
     const char *status_message);
 
 /** Delete all Launcher UI objects. Caller must hold the LVGL lock. */

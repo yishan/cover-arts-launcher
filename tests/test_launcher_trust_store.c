@@ -34,6 +34,12 @@ static void write_u32_le(uint8_t *bytes, uint32_t value)
     bytes[3] = (uint8_t)(value >> 24u);
 }
 
+static void write_u64_le(uint8_t *bytes, uint64_t value)
+{
+    write_u32_le(bytes, (uint32_t)value);
+    write_u32_le(bytes + 4u, (uint32_t)(value >> 32u));
+}
+
 static bool read_memory(void *context, size_t offset, void *destination,
                         size_t length)
 {
@@ -43,6 +49,30 @@ static bool read_memory(void *context, size_t offset, void *destination,
     }
     memcpy(destination, storage + offset, length);
     return true;
+}
+
+static void write_v2_record(uint8_t slot_id, uint8_t bank,
+                            uint32_t generation, uint32_t image_length,
+                            const uint8_t sha[32])
+{
+    uint8_t record[LAUNCHER_TRUST_RECORD_SIZE] = {0};
+    size_t offset = launcher_trust_bank_offset(slot_id, bank);
+
+    memcpy(record, "TRS1", 4u);
+    write_u16_le(record + 4u, 2u);
+    write_u16_le(record + 6u, LAUNCHER_TRUST_RECORD_SIZE);
+    write_u32_le(record + 8u, generation);
+    record[12] = slot_id;
+    record[13] = LAUNCHER_TRUST_POLICY_RESIDENT;
+    write_u32_le(record + 16u, image_length);
+    memcpy(record + 20u, sha, 32u);
+    write_u64_le(record + 52u, 1727222400u);
+    write_u64_le(record + 60u, 1727308800u);
+    write_u16_le(record + 68u, 480u);
+    write_u16_le(record + 70u, 480u);
+    memcpy(record + 72u, "play:281", 8u);
+    write_u32_le(record + 252u, crc32_bytes(record, 252u));
+    memcpy(s_storage + offset, record, sizeof(record));
 }
 
 static launcher_cover_source_t source(void)
@@ -116,12 +146,30 @@ static void test_rejects_wrong_binding_and_corruption(void)
     assert(!launcher_trust_store_select(&memory, 2u, sha, 4096u, &record));
 }
 
+static void test_v2_exposes_install_history_and_identity(void)
+{
+    launcher_cover_source_t memory = source();
+    launcher_trust_record_t record;
+    uint8_t sha[32];
+
+    memset(s_storage, 0xff, sizeof(s_storage));
+    fill_sha(sha, 21u);
+    write_v2_record(0u, 0u, 7u, 8192u, sha);
+    assert(launcher_trust_store_select(&memory, 0u, sha, 8192u, &record));
+    assert(record.schema_version == 2u);
+    assert(record.first_installed_at == 1727222400u);
+    assert(record.last_installed_at == 1727308800u);
+    assert(record.first_install_utc_offset_minutes == 480);
+    assert(strcmp(record.source_id, "play:281") == 0);
+}
+
 int main(void)
 {
     assert(launcher_trust_bank_offset(0u, 0u) == 0x60000u);
     assert(launcher_trust_bank_offset(2u, 1u) == 0x65000u);
     test_selects_newest_exact_receipt();
     test_rejects_wrong_binding_and_corruption();
+    test_v2_exposes_install_history_and_identity();
     puts("Launcher trust store: PASS");
     return 0;
 }

@@ -11,7 +11,7 @@
 #define LAUNCHER_COVER_BANKS_PER_SLOT 2u
 #define LAUNCHER_COVER_PAYLOAD_OFFSET 0x1000u
 #define LAUNCHER_COVER_USED_SIZE                                           \
-    (LAUNCHER_SLOT_COUNT * LAUNCHER_COVER_BANKS_PER_SLOT *                 \
+    (LAUNCHER_LEGACY_SLOT_COUNT * LAUNCHER_COVER_BANKS_PER_SLOT *          \
      LAUNCHER_COVER_BANK_SIZE)
 #define LAUNCHER_COVER_VERIFY_CHUNK 256u
 
@@ -28,6 +28,7 @@ typedef struct {
     bool valid;
     uint8_t bank;
     size_t bank_offset;
+    size_t payload_offset;
     launcher_cover_manifest_t manifest;
 } launcher_cover_record_t;
 
@@ -42,5 +43,11 @@ bool launcher_cover_store_read_payload(const launcher_cover_source_t *source,
                                        const launcher_cover_record_t *record,
                                        size_t payload_offset,
                                        void *destination, size_t length);
+
+/** Verify a directly-addressed RGB565 payload and expose it as a cover. */
+bool launcher_cover_store_direct(const launcher_cover_source_t *source,
+                                 const launcher_cover_manifest_t *manifest,
+                                 size_t payload_offset,
+                                 launcher_cover_record_t *out);
 
 #endif

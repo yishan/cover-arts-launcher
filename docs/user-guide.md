@@ -4,62 +4,65 @@
 
 # Cover Arts Launcher user guide
 
-## On-device controls
+## Device controls
 
-- `Up` / `Down`: move between the three positions.
+- `Up` / `Down`: move through installed plays.
 - `OK`: launch the centered play.
-- Empty position: remains selectable and does not launch an application.
-- Restart or power cycle: return to the Launcher while retaining verified plays.
-- Adapted play only: hold `Up` on that play's existing cover or start page to
-  return directly. This shortcut is not required and should not affect gameplay.
+- `OK Long`: open details; press `OK` in details to return to the library.
+- Restart or power cycle: return to the Launcher while keeping verified plays.
+- Adapted plays only: hold `Up` on that play's existing cover or start page to
+  return directly to the Launcher. This optional shortcut is not reserved during
+  gameplay.
 
-## Install a play
+The library shows only installed plays. Its position indicator is the current
+play over the installed total, not a set of pre-created empty positions.
 
-The Play Manager accepts an official Play detail URL or a local `.bin`. For an
-official URL, it retrieves the available title, version, Source ID, firmware
-hash, and cover. For a local file, review the detected firmware and provide the
-display metadata yourself.
+## Play details
 
-Before writing, the manager previews and locally converts the cover, validates
-the ESP32-C3 image, checks that it fits the selected 2 MiB position, and checks
-title glyph coverage. It then writes only the selected application position and
-its metadata. Other positions remain unchanged.
+The details view shows the play version, first installation time, latest
+installation or update time, and launch count. Older metadata may show no record
+until that play is installed or updated again under v1.3.1.
 
-After installation, distinguish these two states:
+## Install plays
 
-1. The browser verified Flash and sent a reset request.
-2. You observed the new cover and launched the play on the device.
+The hosted Play Manager accepts an official Play detail URL or a local `.bin`.
+Review the detected title, version, source ID, firmware hash, and cover before
+writing. It validates the ESP32-C3 app and checks Chinese title glyph coverage.
 
-Only the second state is physical-device confirmation.
+v1.3.1 allocates each play from its verified app length plus its sidecar and
+appends plays in installation order while enough contiguous space remains. The
+absolute maximum is 16 OTA play entries, but available Flash normally limits the
+real count first.
 
-## Replace or erase a position
+After installation, distinguish two states:
 
-Selecting an occupied position and installing another play replaces only that
-position after explicit confirmation. **Erase selected position** removes that
-position's app, cover banks, and trust receipts; it does not erase the Launcher,
-NVS, PHY data, or either other position.
+1. The browser verified Flash data and requested a restart.
+2. The user observed the new cover and successfully launched the play.
+
+Only the second state is on-device confirmation.
+
+## Current deletion behavior
+
+The first dynamic-storage release is append-only. Removing the final installed
+play reclaims its tail space. Arbitrary middle deletion and automatic physical
+compaction are not included in v1.3.1.
 
 ## Generic plays and optional return support
 
-Compatible generic plays can be installed and launched without source changes.
-They remain installed after use. If a play does not implement the optional
-cover-page return protocol, restart or power-cycle the device to return to the
-Launcher.
+Compatible generic plays require no source change to install or launch. Without
+the optional return protocol, restart or power cycle the device to return to the
+Launcher. Creators can use the
+[compatibility skill](../skills/ai-passport-cover-arts-launcher/SKILL.md) to add
+`Up Long` only to an existing cover or start page.
 
-Creators can use the [compatibility skill](../skills/ai-passport-cover-arts-launcher/SKILL.md).
-It must not add a global `Up Long` handler or change input inside gameplay,
-settings, or unrelated screens.
+## Recovery
 
-## Common recovery actions
-
-- **Browser disconnected:** reconnect and rescan before deciding the installed
-  state. Do not trust a stale browser message.
-- **Play write failed:** retry the app installation after the manager confirms
-  that the position is unbootable or after an explicit erase.
-- **Cover write failed:** retry the cover only, or finish with the placeholder
-  when the manager offers that recovery path.
-- **Reset was sent but the display did not change:** reconnect, rescan, and then
-  restart the device manually. The browser reset request and observed display
-  are reported separately.
-- **Wrong title or cover:** rescan first. Metadata is accepted only when it is
-  bound to the installed application hash and passes its own integrity checks.
+- **Browser disconnects:** reconnect and rescan before judging installation
+  state; do not rely on a stale page message.
+- **Play write fails:** retry only after the manager confirms the incomplete app
+  cannot boot, or use complete installation if the dynamic table was being
+  committed.
+- **Reset was requested but the screen did not change:** reconnect, rescan, and
+  then restart manually.
+- **Title or cover is wrong:** rescan first. The Launcher accepts metadata only
+  when it matches the installed app identity and passes integrity checks.

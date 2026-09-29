@@ -4,6 +4,21 @@
 
 # Changelog
 
+## v1.3.1 — 2026-09-29
+
+- Replaced the fixed three-position layout with dynamic play storage allocated
+  from each verified firmware image's actual size.
+- Changed the Cover Art library to show only installed plays and added a compact
+  details view with version, install history, and launch count.
+- Improved Chinese labels and play-title support, cover layout, bottom hints,
+  metadata recognition, and launch-time verification.
+- Preserved generic-play compatibility: restart or power cycle returns to the
+  Launcher, while adapted cover pages may optionally support `Up Long`.
+- Added a migration warning: the first complete v1.3.1 installation replaces the
+  old Flash layout, clears older installed plays, and requires adding them again.
+- Kept this first dynamic-storage release append-only; arbitrary middle deletion
+  and automatic physical compaction remain future work.
+
 ## v1.0.0 — 2026-09-24
 
 - Released the factory Cover Art launcher with three fixed 2 MiB play positions

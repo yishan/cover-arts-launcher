@@ -5,9 +5,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define LAUNCHER_SLOT_COUNT 3u
+#define LAUNCHER_MAX_SLOTS 16u
 #define LAUNCHER_PROJECT_NAME_MAX 32u
 #define LAUNCHER_PROJECT_VERSION_MAX 32u
+#define LAUNCHER_SOURCE_ID_MAX 48u
 
 typedef enum {
     LAUNCHER_SLOT_EMPTY = 0,
@@ -19,6 +20,7 @@ typedef enum {
 typedef enum {
     LAUNCHER_TRUST_NONE = 0,
     LAUNCHER_TRUST_INSTALL_RECEIPT,
+    LAUNCHER_TRUST_DYNAMIC_SIDECAR,
     LAUNCHER_TRUST_LEGACY_COVER,
     LAUNCHER_TRUST_LEGACY_GENERIC,
 } launcher_trust_source_t;
@@ -30,6 +32,13 @@ typedef struct {
     launcher_trust_source_t trust_source;
     char project_name[LAUNCHER_PROJECT_NAME_MAX + 1u];
     char version[LAUNCHER_PROJECT_VERSION_MAX + 1u];
+    char source_id[LAUNCHER_SOURCE_ID_MAX + 1u];
+    uint64_t first_installed_at;
+    uint64_t last_installed_at;
+    int16_t first_install_utc_offset_minutes;
+    int16_t last_install_utc_offset_minutes;
+    uint32_t launch_count;
+    bool launch_count_valid;
 } launcher_slot_info_t;
 
 typedef enum {
@@ -66,14 +75,16 @@ typedef struct {
 
 typedef struct {
     size_t selected;
+    size_t slot_count;
     launcher_page_t page;
-    launcher_slot_info_t slots[LAUNCHER_SLOT_COUNT];
+    launcher_slot_info_t slots[LAUNCHER_MAX_SLOTS];
 } launcher_model_t;
 
 void launcher_model_init(launcher_model_t *model,
-                         const launcher_slot_info_t slots[LAUNCHER_SLOT_COUNT]);
+                         const launcher_slot_info_t *slots, size_t slot_count);
 void launcher_model_refresh(launcher_model_t *model,
-                            const launcher_slot_info_t slots[LAUNCHER_SLOT_COUNT]);
+                            const launcher_slot_info_t *slots,
+                            size_t slot_count);
 launcher_result_t launcher_model_handle(launcher_model_t *model,
                                         launcher_input_t input);
 bool launcher_model_all_empty(const launcher_model_t *model);

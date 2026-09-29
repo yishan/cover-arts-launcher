@@ -75,7 +75,7 @@ static void test_encode_rejects_invalid_fields(void)
         cases[index].manifest = valid_manifest();
     }
     cases[0].name = "slot";
-    cases[0].manifest.slot_id = LAUNCHER_SLOT_COUNT;
+    cases[0].manifest.slot_id = LAUNCHER_LEGACY_SLOT_COUNT;
     cases[1].name = "width";
     cases[1].manifest.width = LAUNCHER_COVER_WIDTH - 1u;
     cases[2].name = "height";

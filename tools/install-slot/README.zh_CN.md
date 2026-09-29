@@ -48,6 +48,10 @@ App 写入或校验失败时，安装器会尝试擦除启动头并读回确认�
 
 每次新安装在 App 读回验证后写入一条双 bank 信任收据，绑定目标位置、App 长度和 App SHA-256。旧版 SHA 绑定封面可作为迁移凭据；没有收据和封面的既有通用玩法保持兼容启动，但不会显示为“已验证常驻”。
 
+当前收据还会保存浏览器提供的首次安装时间、最近一次安装／更新时间及对应 UTC 偏移。同一稳定玩法身份执行更新时保留首次安装时间，并刷新最近安装时间。旧版收据继续有效，但在该玩法再次安装或更新前，详情页相应字段显示“暂无记录”。只修复名称或封面不会伪造一次安装时间。
+
+Launcher 在切换到所选玩法前，把该玩法的启动次数写入自己的 NVS。位置被替换为不同玩法身份后，页面从 0 次重新显示；统计写入失败只记录日志，不会阻止已验证玩法启动。
+
 输入标题时页面会在写入前按 Launcher 实际字体清单检查 UTF-8 长度和字符覆盖。未收录字符会显示字符及 Unicode 码点，并阻止安装，避免设备端出现方框占位。
 
 选择位置并明确勾选确认后，“擦除所选位置”会清空该位置完整的 2 MiB App 区域、两个 64 KiB 封面 bank 和两个 4 KiB 信任 bank，并对各范围的首尾取样验证。此操作不会擦除 Launcher、NVS、PHY、分区表或另外两个位置。
@@ -58,6 +62,6 @@ App 写入或校验失败时，安装器会尝试擦除启动头并读回确认�
 npm test
 ```
 
-ESP 镜像与分区解析器实质性改编自 `meta-pass` 提交 `994caaf52357d97323bffb82b2db9cc784afb1eb`。MIT 声明保留在 `extract-app-image.js` 和 `LICENSE.meta-pass.txt`。当前 Web Serial 运行时使用官方 `esptool-js` 0.6.1 的 `bundle.js`，依赖版本与完整性由 lockfile 精确固定，浏览器文件保存为 `vendor/esptool-js-0.6.1.js`，Apache-2.0 声明保存为 `vendor/LICENSE.esptool-js.txt`。运行 `npm run vendor:esptool` 可以重新生成这两个文件。本项目的分区、尺寸、manifest、写入范围、运行时版本和恢复契约由本地测试定义。
+ESP 镜像与分区解析器实质性改编自 `meta-pass` 提交 `994caaf52357d97323bffb82b2db9cc784afb1eb`。MIT 声明保留在 `extract-app-image.js` 和 `LICENSE.meta-pass.txt`。当前 Web Serial 运行时使用官方 `esptool-js` 0.6.1 的 `bundle.js`，依赖版本与完整性由 lockfile 精确固定，浏览器文件保存为 `vendor/esptool-js-0.6.1.js`，Apache-2.0 声明保存为 `vendor/LICENSE.esptool-js.txt`。运行 `npm run vendor:esptool` 可以重新生成这两个文件。旧版 0.5.6 运行时及其支持文件暂时仅用于回退，应用不再导入。本项目的分区、尺寸、manifest、写入范围、运行时版本和恢复契约由本地测试定义。
 
 主机测试不能代替实机验收。在 Web Serial 门禁完成前，需在目标设备上测试：完整安装成功、擦除和各写入阶段的断线/断电、app-only 与合并玩法安装、App 失败、封面失败，以及仅重试封面。

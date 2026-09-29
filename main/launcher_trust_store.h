@@ -12,7 +12,7 @@
 #define LAUNCHER_TRUST_BANKS_PER_SLOT 2u
 #define LAUNCHER_TRUST_REGION_OFFSET LAUNCHER_COVER_USED_SIZE
 #define LAUNCHER_TRUST_USED_SIZE                                           \
-    (LAUNCHER_SLOT_COUNT * LAUNCHER_TRUST_BANKS_PER_SLOT *                 \
+    (LAUNCHER_LEGACY_SLOT_COUNT * LAUNCHER_TRUST_BANKS_PER_SLOT *          \
      LAUNCHER_TRUST_BANK_SIZE)
 
 typedef enum {
@@ -22,12 +22,18 @@ typedef enum {
 
 typedef struct {
     bool valid;
+    uint16_t schema_version;
     uint8_t bank;
     uint32_t generation;
     uint8_t slot_id;
     launcher_trust_policy_t policy;
     uint32_t image_length;
     uint8_t firmware_sha256[32];
+    uint64_t first_installed_at;
+    uint64_t last_installed_at;
+    int16_t first_install_utc_offset_minutes;
+    int16_t last_install_utc_offset_minutes;
+    char source_id[LAUNCHER_SOURCE_ID_MAX + 1u];
 } launcher_trust_record_t;
 
 size_t launcher_trust_bank_offset(uint8_t slot_id, uint8_t bank);

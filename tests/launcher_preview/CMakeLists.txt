@@ -19,6 +19,7 @@ add_executable(
     ../../main/launcher_cover_view.c
     ../../main/launcher_manifest.c
     ../../main/launcher_model.c
+    ../../main/launcher_time.c
     ../../main/launcher_ui.c
     ../../assets/fonts/launcher_source_han_sans_sc_16_gb2312.c
 )

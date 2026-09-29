@@ -99,6 +99,11 @@ test("slot inventory recognizes an exact SHA-bound resident receipt without a co
     slotId: 2,
     imageLength: app.length,
     firmwareSha256: appSha,
+    firstInstalledAt: 1727222400,
+    lastInstalledAt: 1727308800,
+    firstUtcOffsetMinutes: 480,
+    lastUtcOffsetMinutes: 480,
+    sourceId: "play:281",
   });
   loader.flash.set(record, trustBankAddress(2, "b"));
 
@@ -108,6 +113,9 @@ test("slot inventory recognizes an exact SHA-bound resident receipt without a co
   assert.equal(slot.trustSource, "install-receipt");
   assert.equal(slot.activeTrustBank, "b");
   assert.equal(slot.trustGeneration, 3);
+  assert.equal(slot.installIdentity, "play:281");
+  assert.equal(slot.firstInstalledAt, 1727222400);
+  assert.equal(slot.lastInstalledAt, 1727308800);
   assert.equal(slot.coverPayload, null);
 });
 
