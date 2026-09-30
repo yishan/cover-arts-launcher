@@ -4,9 +4,10 @@
 
 # Play Manager
 
-Play Manager is the local browser tool for installing the multi-play Launcher
-and then managing its three play positions. Its functional interface is an
-engineering preview. The device already uses the graphical Cover Art selector.
+Play Manager is the browser tool for installing the multi-play Launcher and
+managing its runtime-discovered play library. Each play uses only its verified
+image length rounded to 64 KiB plus one 64 KiB DPS1 sidecar; the manager does
+not pre-reserve three fixed 2 MiB positions.
 
 ## Run locally
 
@@ -24,29 +25,80 @@ Open `http://127.0.0.1:4173`. The tool and vendored browser dependencies run
 locally. The proxy accepts only official Play detail/API URLs and official
 `/api/` firmware or image resources; it is not a general-purpose proxy.
 
+## Deploy to Vercel
+
+Deploy this directory as the Vercel project root. `index.html` and the vendored
+browser runtime are served as static files. `/api/play` and `/api/resource` are
+Vercel Functions with the same allowlist as the loopback server: they accept
+only official AI Passport Play URLs and official `/api/` resources, reject
+cross-origin redirects, and never act as a general-purpose proxy.
+
+The deployed page must be opened over HTTPS in desktop Chrome or Edge for Web
+Serial. Vercel provides HTTPS automatically. Preview deployments should be
+tested with an official Play URL and a real-device connection before promotion
+to a production domain.
+
+## Deploy to Cloudflare Pages alongside Vercel
+
+The Vercel deployment and `https://calm.yishan.app/` can remain the production
+site while Cloudflare Pages publishes the same source at its default
+`https://cover-arts-launcher.pages.dev/` hostname or another domain. The two
+targets share the allowlist and upstream validation in
+`lib/official-proxy-core.js`; `api/` contains the Vercel adapter and
+`functions/` contains the Cloudflare Pages Functions adapter.
+
+Build and test the Cloudflare output locally:
+
+```bash
+npm ci
+npm run build:cloudflare
+npm run dev:cloudflare
+```
+
+The build copies an explicit public-file allowlist into `dist/`, generates the
+Pages `_headers`, `_redirects`, and `_routes.json` files, and leaves tests and
+server source out of the published assets. To deploy from an authenticated
+machine:
+
+```bash
+npx wrangler whoami
+npm run deploy:cloudflare
+```
+
+Keep the Pages project on its generated hostname until its API routes, Skill
+downloads, Web Serial connection, and real-device operations have been
+validated. This parallel deployment does not change the Vercel production
+domain or its redirects. The current Cloudflare project uses Direct Upload;
+running `npm run deploy:cloudflare` from `main` updates the fixed production
+hostname, while other branches create preview deployments. A CI service can run
+the same command with a scoped Cloudflare API token. Cloudflare cannot convert a
+Direct Upload project to native Git integration later; if native Git builds are
+preferred, create a separate Pages project with this directory as its root,
+`npm ci && npm run build:cloudflare` as its build command, and `dist` as its
+output directory.
+
 ## Complete-system installation
 
 The complete-system path is a one-time migration. Before enabling installation
 it reads the connected chip, Flash size, and partition-table sector. It accepts
 only an ESP32-C3 with 8 MiB Flash and either the known legacy single-factory
-layout or the exact Launcher layout. Any unknown partition or invalid
+layout, the fixed three-position Launcher layout, or a valid dynamic Launcher
+layout. Any unknown partition or invalid
 partition-table MD5 fails closed.
 
 Select the published complete merged image and enter its published SHA-256.
-The installer validates the published SHA, embedded Launcher partition table,
-and factory-app checksum/appended SHA, then
-explicitly erases all three OTA positions, all six cover banks, and `otadata`.
+The installer validates the SHA and embedded Launcher partition table, then
+explicitly erases the dynamic play arena and `otadata`.
 It writes only the bootloader, partition table, and exact factory Launcher app,
 reads each segment back, samples both ends of every erased range, confirms blank
-OTA metadata, and confirms three blank play boot headers. It finally sends a
-reset request; the user still confirms the resulting Launcher display on-device.
+OTA metadata, and confirms an empty dynamic library.
 
 This flow does not resume. After cable or power interruption, reconnect in ROM
 download mode and restart the complete-system installation from its warning
 step. Success offers installing the first play and finishing with an empty
 library as equal outcomes.
 
-## Play-position installation
+## Dynamic play installation
 
 A play can come from an official Play detail/API URL or a local `.bin`. The
 official path obtains `downloadUrl`, `firmwareSha256`, identity, title, version,
@@ -56,12 +108,9 @@ Chinese title text and `shareVersion` when available. For a local file, an optio
 computed source SHA is authoritative when it is omitted.
 
 Both app-only ESP32-C3 images and merged images are accepted. Merged input must
-have a valid partition-table MD5 and a factory app. Before the selected position
-is erased, the extracted app must fit the complete 2 MiB OTA position and pass
-segment-boundary, checksum, and appended-SHA validation. Its displayed SHA is
-bound into the cover manifest. On connection, inventory revalidates the installed
-app and accepts title/cover metadata only when app SHA, manifest, and payload CRC
-all match.
+have a valid partition-table MD5 and a factory app. The extracted app may use
+the available play arena up to its capacity. Its displayed SHA is bound into
+the DPS1 sidecar record.
 
 Plays do not need a Launcher SDK or health-confirmation callback. Each launch
 uses a one-shot OTA boot: reset or power-cycle returns to the Launcher, and the
@@ -69,57 +118,40 @@ verified play remains installed with the same title and cover so it can be
 launched again. An optional integration is only needed for an in-app return
 action.
 
-Creators who want the optional shortcut can use the
-[`ai-passport-cover-arts-launcher`](../../skills/ai-passport-cover-arts-launcher/SKILL.md)
-skill. It integrates Up Long only on the play's existing cover/start page and
-does not reserve that input during gameplay, settings, or other states. The
-public guide, Agent prompt, and downloadable skill are published at
-`https://cover-arts-launcher.yishan.app/skills/`.
+The manager reads the partition table at runtime and appends each new play to
+the logical library. It uses the smallest released physical range that fits,
+falling back to the free tail. It erases and writes the selected allocation, reads
+the complete app back, and verifies its SHA before touching the directory. The
+official cover or a user-selected PNG, JPEG, or WebP is center-cropped and
+previewed at 120×160. The preview is encoded locally in the browser at no more
+than 50 KiB; no image is uploaded to a third party.
 
-Target recommendation order is the same `source_id`, the first empty position,
-then explicit manual replacement. A play operation erases and writes only the
-chosen OTA position. The official cover or a user-selected PNG, JPEG, or WebP
-is center-cropped and previewed at 120×160. The preview is encoded locally in
-the browser at no more than 50 KiB; no image is uploaded to a third party. Its
-fixed 38,400-byte RGB565 device payload is then generated; the inactive 64 KiB cover bank is erased, its payload is
-verified, and its manifest is committed last. It never writes NVS, PHY, the
-factory Launcher, or the partition table.
+The fixed 38,400-byte RGB565 payload and DPS1 record carry the title, version,
+Source ID, app length and SHA, first/last install time, and cover CRC. After app
+and sidecar readback pass, the manager commits a new MD5-protected partition
+table, clears `otadata`, and rescans the library while keeping the download
+session connected. The user can append more plays without reconnecting; only
+the explicit **Finish and restart** action exits download mode, boots the
+Launcher, and closes the browser serial connection. Launcher launch statistics
+remain in NVS and start at zero when no counter exists.
 
-After an app write or verification failure, the installer erases the boot header
-and reads it back. It calls the position unbootable only after that readback;
-failed cleanup is reported as an unknown state that requires a reconnect and
-rescan. A cover-only failure leaves the verified app bootable and offers both a
-cover-only retry and finishing with a placeholder plus reset. The browser reports
-verified Flash data and a sent reset request separately from on-device display
-confirmation.
+Any failure before the final partition-table commit leaves the previous library
+intact and the unreachable partial bytes unbootable. If the table write itself
+is interrupted, the manager warns that a complete-system reinstall may be
+needed. If the table was written and only post-write verification was
+interrupted, reconnecting and rescanning comes first; reinstall is suggested
+only when the dynamic library can no longer be recognized. The manager also
+serializes Web Serial writes and releases every writer in a `finally` block so
+an exceptional write cannot leave the stream locked.
 
-After app readback verification, every new install commits a double-bank trust
-receipt bound to the selected position, exact app length, and app SHA-256. A
-legacy SHA-bound cover can act as a migration receipt. Existing generic plays
-with neither remain launchable in compatibility mode but are not labelled
-`verified resident`.
-
-The current receipt also stores the first installation time and the most recent
-installation/update time supplied by the browser, including its UTC offset. An
-update of the same stable play identity preserves the first time and refreshes
-the most recent time. Older receipts remain valid and appear as `No record`
-until that play is installed or updated again. Metadata/cover-only repair does
-not create a false installation timestamp.
-
-The Launcher stores a per-play launch count in its own NVS immediately before
-switching to the selected app. Replacing a position with a different identity
-starts that position's displayed count at zero. A statistics write failure is
-logged but never blocks a verified play from launching.
-
-Before any write, the title field checks UTF-8 length and character coverage
-against the Launcher's exact font inventory. Unsupported glyphs are shown with
-their Unicode code points and block installation, avoiding placeholder boxes on
-the device.
-
-After selecting and explicitly confirming a position, **Erase selected
-position** erases that position's complete 2 MiB app region, both 64 KiB
-cover banks, and both 4 KiB trust banks, then samples both ends of each range. It does not erase the
-Launcher, NVS, PHY data, the partition table, or either other position.
+Any logical position can be removed. Before committing the new directory, the
+manager rewrites the inactive DPS1 bank of each following play with its new
+logical position. It then commits the renumbered partition table, clears
+`otadata`, rescans every retained identity, and erases the removed allocation.
+Application bytes are not moved. Launcher launch counts follow the stable
+Source ID or firmware SHA instead of the old position key. Released holes are
+reused automatically; physical compaction remains a separate future operation
+when total free space is sufficient but no single hole fits.
 
 ## Validation and provenance
 
@@ -139,6 +171,8 @@ tests define this project's partition, size, manifest, write-scope, runtime
 version, and recovery contracts.
 
 Host tests do not replace device acceptance. Before the Web Serial gate is
-complete, test a successful complete install, cable/power interruption during
-erase and each write stage, app-only and merged play installs, app failure,
-cover failure, and cover-only retry on the target board.
+complete, test a successful complete install, an empty-library first append,
+multiple app sizes, cable/power interruption before and during directory commit,
+app-only and merged play installs, sidecar failure, first/middle/final removal,
+logical reflow, hole reuse, launch-count retention,
+and post-reset Launcher rendering on the target board.

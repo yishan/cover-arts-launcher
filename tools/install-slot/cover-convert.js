@@ -71,6 +71,23 @@ export function rgbaToCoverRgb565({ data, width, height }) {
   return { width: COVER_WIDTH, height: COVER_HEIGHT, data: result };
 }
 
+export function coverRgb565ToRgba(input) {
+  const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
+  if (bytes.length !== COVER_PAYLOAD_LENGTH) throw new Error("Cover payload has the wrong length.");
+  const result = new Uint8ClampedArray(COVER_WIDTH * COVER_HEIGHT * 4);
+  for (let source = 0, destination = 0; source < bytes.length; source += 2, destination += 4) {
+    const rgb565 = bytes[source] | (bytes[source + 1] << 8);
+    const red = (rgb565 >> 11) & 0x1f;
+    const green = (rgb565 >> 5) & 0x3f;
+    const blue = rgb565 & 0x1f;
+    result[destination] = (red << 3) | (red >> 2);
+    result[destination + 1] = (green << 2) | (green >> 4);
+    result[destination + 2] = (blue << 3) | (blue >> 2);
+    result[destination + 3] = 0xff;
+  }
+  return { width: COVER_WIDTH, height: COVER_HEIGHT, data: result };
+}
+
 export function encodeCoverManifest({
   generation, slotId, sourceKind, title, sourceId = "", version = "", firmwareSha256, payload,
 }) {

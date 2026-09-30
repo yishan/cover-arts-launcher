@@ -26,3 +26,11 @@ export async function resetToApplication(transport, {
   }
   await wait(bootWaitMs);
 }
+
+export async function resetAndDisconnect(transport, options = {}) {
+  if (!transport || typeof transport.disconnect !== "function") {
+    throw new Error("串口传输未连接，无法断开设备。");
+  }
+  await resetToApplication(transport, options);
+  await transport.disconnect();
+}

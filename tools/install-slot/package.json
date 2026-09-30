@@ -3,11 +3,15 @@
   "type": "module",
   "scripts": {
     "build:skills": "node build-skill-site.mjs",
+    "build:cloudflare": "npm run build:skills && node build-cloudflare.mjs",
+    "dev:cloudflare": "npm run build:cloudflare && wrangler pages dev dist",
+    "deploy:cloudflare": "npm run build:cloudflare && wrangler pages deploy dist",
     "start": "node server.mjs",
     "test": "node --test test-*.mjs",
     "vendor:esptool": "node vendor-esptool.mjs"
   },
   "devDependencies": {
-    "esptool-js": "0.6.1"
+    "esptool-js": "0.6.1",
+    "wrangler": "4.137.0"
   }
 }

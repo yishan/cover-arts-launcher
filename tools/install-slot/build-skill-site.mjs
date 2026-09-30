@@ -1,57 +1,38 @@
-import { cp, mkdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readdir, rm, utimes } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const toolRoot = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(toolRoot, "../..");
-const outputRoot = resolve(process.argv[2] ?? join(toolRoot, "dist-skill-site"));
 const sourceSkill = join(repositoryRoot, "skills", "ai-passport-cover-arts-launcher");
-const skillOutput = join(outputRoot, "skills", "ai-passport-cover-arts-launcher");
-const publicFiles = [
-  "index.html",
-  "app.js",
-  "cover-bank.js",
-  "cover-convert.js",
-  "cover-image.js",
-  "device-reset.js",
-  "extract-app-image.js",
-  "play-source.js",
-  "slot-inspector.js",
-  "slot-install.js",
-  "system-install.js",
-  "title-font.js",
-  "title-glyphs.js",
-  "trust-record.js",
-];
+const publicSkillsRoot = join(toolRoot, "skills");
+const publicSkill = join(publicSkillsRoot, "ai-passport-cover-arts-launcher");
+const archiveName = "ai-passport-cover-arts-launcher.zip";
+const archiveTimestamp = new Date("2000-01-01T00:00:00.000Z");
 
-await rm(outputRoot, { recursive: true, force: true });
-await mkdir(join(outputRoot, "skills"), { recursive: true });
-for (const file of publicFiles) {
-  await cp(join(toolRoot, file), join(outputRoot, file));
+async function normalizeTimestamps(path) {
+  const entries = await readdir(path, { withFileTypes: true });
+  for (const entry of entries) {
+    const child = join(path, entry.name);
+    if (entry.isDirectory()) await normalizeTimestamps(child);
+    else await utimes(child, archiveTimestamp, archiveTimestamp);
+  }
+  await utimes(path, archiveTimestamp, archiveTimestamp);
 }
-await cp(join(toolRoot, "vendor"), join(outputRoot, "vendor"), { recursive: true });
-await cp(join(toolRoot, "api"), join(outputRoot, "api"), { recursive: true });
-await cp(join(toolRoot, "skills", "index.html"), join(outputRoot, "skills", "index.html"));
-await cp(sourceSkill, skillOutput, { recursive: true });
 
-await writeFile(join(outputRoot, "package.json"), `${JSON.stringify({
-  private: true,
-  type: "module",
-}, null, 2)}\n`);
+await mkdir(publicSkillsRoot, { recursive: true });
+await rm(publicSkill, { recursive: true, force: true });
+await rm(join(publicSkillsRoot, archiveName), { force: true });
+await cp(sourceSkill, publicSkill, { recursive: true });
+await normalizeTimestamps(publicSkill);
 
-await writeFile(join(outputRoot, "vercel.json"), `${JSON.stringify({
-  cleanUrls: true,
-  trailingSlash: false,
-  rewrites: [{ source: "/skills", destination: "/skills/index.html" }],
-}, null, 2)}\n`);
-
-const archive = spawnSync("zip", ["-rq", "ai-passport-cover-arts-launcher.zip", "ai-passport-cover-arts-launcher"], {
-  cwd: join(outputRoot, "skills"),
+const archive = spawnSync("zip", ["-rqX", archiveName, "ai-passport-cover-arts-launcher"], {
+  cwd: publicSkillsRoot,
   encoding: "utf8",
 });
 if (archive.status !== 0) {
   throw new Error(`zip failed: ${archive.stderr || archive.stdout || `exit ${archive.status}`}`);
 }
 
-console.log(`Built Play Manager and public Skill site: ${outputRoot}`);
+console.log(`Synced public Skill and ZIP from ${sourceSkill}`);

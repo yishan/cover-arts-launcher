@@ -8,6 +8,7 @@ import {
   dynamicRecordMatchesImage,
   dynamicSidecarLayout,
   encodeDynamicSidecarRecord,
+  reassignDynamicSidecarRecord,
   selectDynamicSidecarRecord,
 } from "./dynamic-sidecar.js";
 
@@ -46,6 +47,22 @@ test("dynamic sidecar record round-trips cover, trust, identity, and install his
   assert.equal(decoded.lastInstalledAt, 1727308800);
   assert.equal(dynamicCoverMatchesRecord(decoded, cover), true);
   assert.equal(dynamicRecordMatchesImage(decoded, 0x123450, sha), true);
+});
+
+test("logical reassignment changes only generation, slot id, and record CRC", () => {
+  const original = record({ generation: 12, slotId: 7 });
+  const reassigned = reassignDynamicSidecarRecord(original, { generation: 13, slotId: 3 });
+  const before = decodeDynamicSidecarRecord(original);
+  const after = decodeDynamicSidecarRecord(reassigned);
+  assert.equal(after.generation, 13);
+  assert.equal(after.slotId, 3);
+  assert.equal(after.title, before.title);
+  assert.equal(after.sourceId, before.sourceId);
+  assert.equal(after.imageLength, before.imageLength);
+  assert.equal(after.payloadCrc32, before.payloadCrc32);
+  assert.equal(after.firstInstalledAt, before.firstInstalledAt);
+  assert.equal(after.lastInstalledAt, before.lastInstalledAt);
+  assert.deepEqual(after.firmwareSha256, before.firmwareSha256);
 });
 
 test("placeholder metadata remains a trusted app record without a cover", () => {

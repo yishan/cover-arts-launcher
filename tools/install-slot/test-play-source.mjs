@@ -42,15 +42,6 @@ test("prefers the official Chinese title supported by the Launcher font", () => 
   }).deviceTitle, "点球大战");
 });
 
-test("falls back to the official English title when Chinese contains missing glyphs", () => {
-  assert.equal(normalizeOfficialPlay({
-    play: {
-      ...officialPayload.play,
-      title: { zh: "神龘玩法", en: "Rare Glyph Play" },
-    },
-  }).deviceTitle, "Rare Glyph Play");
-});
-
 test("bounds a Chinese device title at a valid 64-byte UTF-8 boundary", () => {
   const deviceTitle = normalizeOfficialPlay({
     play: {

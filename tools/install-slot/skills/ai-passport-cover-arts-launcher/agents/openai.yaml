@@ -1,0 +1,7 @@
+interface:
+  display_name: "AI Passport Cover Arts Launcher"
+  short_description: "仅在玩法已有封面页接入长按上键返回启动器，不影响游戏输入"
+  icon_small: "./assets/up-long-cover-return.svg"
+  icon_large: "./assets/up-long-cover-return.svg"
+  brand_color: "#12664F"
+  default_prompt: "Use $ai-passport-cover-arts-launcher to audit or add cover-page-only Up Long return support without changing gameplay input."

@@ -3,105 +3,165 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#173b31">
   <meta name="description" content="AI Passport Cover Arts Launcher 创作者兼容指南与 Agent Skill。">
-  <title>AI Passport Cover Arts Launcher Skill</title>
-  <style>
-    :root { color-scheme: light; font: 16px/1.65 "Avenir Next", "Noto Sans SC", "PingFang SC", sans-serif; --ink:#17211d; --muted:#64716b; --line:#d9e2dd; --paper:#f4f7f5; --card:#fff; --accent:#12664f; --soft:#e7f2ed; --warm:#f4efe6; }
-    * { box-sizing: border-box; }
-    body { margin:0; background:var(--paper); color:var(--ink); }
-    a { color:var(--accent); text-underline-offset:3px; }
-    main { width:min(1040px, calc(100% - 32px)); margin:0 auto; padding:48px 0 80px; }
-    .eyebrow { margin:0 0 12px; color:var(--accent); font-size:13px; font-weight:800; letter-spacing:.13em; }
-    h1 { max-width:830px; margin:0; font-size:clamp(38px, 7vw, 72px); line-height:1.02; letter-spacing:-.055em; }
-    .lead { max-width:750px; margin:20px 0 0; color:var(--muted); font-size:clamp(18px, 2.4vw, 23px); }
-    .hero { padding:30px 0 42px; }
-    .protocol { display:inline-flex; align-items:center; gap:10px; margin-top:26px; padding:10px 14px; border:1px solid #b9d0c5; border-radius:999px; background:var(--soft); color:var(--accent); font-weight:750; }
-    .protocol span:first-child { display:grid; width:28px; height:28px; place-items:center; border-radius:50%; background:var(--accent); color:#fff; }
-    .grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:16px; }
-    .card { padding:24px; border:1px solid var(--line); border-radius:18px; background:var(--card); }
-    .card h2, .card h3 { margin:0 0 8px; line-height:1.25; }
-    .card p { margin:7px 0; color:var(--muted); }
-    .tag { display:inline-block; margin-bottom:14px; padding:4px 9px; border-radius:999px; background:var(--warm); color:#65543c; font-size:12px; font-weight:800; }
-    section { margin-top:18px; }
-    .wide { margin-top:16px; }
-    .copy-box { position:relative; margin-top:13px; padding:17px 108px 17px 17px; border-radius:12px; background:#101713; color:#dce8e1; font:13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; white-space:pre-wrap; overflow-wrap:anywhere; }
-    button { position:absolute; top:10px; right:10px; border:1px solid #4e6258; border-radius:8px; padding:7px 11px; background:#1d2923; color:#fff; font:inherit; cursor:pointer; }
-    .downloads { display:flex; flex-wrap:wrap; gap:10px; margin-top:16px; }
-    .downloads a { display:inline-flex; padding:9px 13px; border:1px solid var(--accent); border-radius:9px; text-decoration:none; font-weight:750; }
-    .downloads a.primary { background:var(--accent); color:#fff; }
-    .boundary { border-left:4px solid var(--accent); background:var(--soft); }
-    footer { margin-top:36px; padding-top:20px; border-top:1px solid var(--line); color:var(--muted); font-size:14px; }
-    @media (max-width:720px) { main { padding-top:24px; } .grid { grid-template-columns:1fr; } .copy-box { padding:54px 14px 14px; } h1 { font-size:44px; } }
-  </style>
+  <title>Cover Arts Launcher Skill</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/skills/skills.css">
 </head>
-<body>
-<main>
-  <header class="hero">
-    <p class="eyebrow">AI PASSPORT · CREATOR PROTOCOL</p>
-    <h1>让玩法只在封面页安全返回 Launcher</h1>
-    <p class="lead">通用玩法无需适配即可安装和启动；创作者也可以增加一个边界清晰的快捷返回：仅在玩法已有封面页长按上键。</p>
-    <div class="protocol"><span>↑</span><span>封面长按 · 约 1.5 秒</span></div>
-  </header>
+<body class="skills-page">
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
 
-  <section class="grid" aria-label="兼容级别">
-    <article class="card">
-      <span class="tag">默认</span>
-      <h2>通用兼容</h2>
-      <p>无需 Launcher SDK。玩法正常启动和运行；复位或重新上电后返回 Launcher，原有名称和封面继续保留。</p>
-    </article>
-    <article class="card">
-      <span class="tag">可选增强</span>
-      <h2>封面快捷返回</h2>
-      <p>只在玩法自己已有的封面／开始页处理 Up Long。游戏、设置、暂停和其他页面的按键行为保持不变。</p>
-    </article>
-  </section>
+  <main id="main-content" class="app-shell skill-shell">
+    <header class="masthead skill-masthead">
+      <div class="brand-mark" aria-hidden="true"><span>C</span><span>A</span><span>L</span><span>M</span></div>
+      <div class="masthead-copy">
+        <p class="eyebrow" translate="no">AI PASSPORT · CREATOR SKILL</p>
+        <h1>Cover Arts Launcher Skill</h1>
+        <p class="lede">帮助玩法创作者安全接入快捷返回，同时保持通用玩法零适配可安装。</p>
+      </div>
+      <div class="deck-index" aria-label="协议版本">
+        <strong>01</strong>
+        <span>CREATOR SKILL</span>
+      </div>
+    </header>
 
-  <section class="card wide boundary">
-    <h2>边界比按键更重要</h2>
-    <p>如果 Agent 无法可靠识别封面状态，就应停止并说明情况；不能新增全局监听，也不能为了协议擅自创建封面页。设备重启返回 Launcher 始终是通用兜底。</p>
-  </section>
+    <nav class="skill-nav" aria-label="页面导航">
+      <a class="button button-secondary" href="/">返回玩法管理器</a>
+      <span class="scope-chip" translate="no">UP LONG · COVER ONLY</span>
+    </nav>
 
-  <section class="card wide">
-    <h2>交给 Agent 接入</h2>
-    <p>将下面的指令发送给支持 Skill 的 Agent：</p>
-    <div class="copy-box" id="integrate-prompt">请使用 $ai-passport-cover-arts-launcher，仅在当前玩法已有的封面页接入长按 Up 返回 Cover Arts Launcher。不要全局占用 Up Long，不要修改游戏、设置或其他页面的按键行为；如果项目没有可识别的封面状态，先说明情况，不要擅自新增页面。保留设备重启返回 Launcher 的兼容策略，未经确认不要刷机、提交或发布。<button type="button" data-copy="integrate-prompt">复制</button></div>
-  </section>
+    <section class="workspace skill-workspace" aria-labelledby="skill-heading">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">COMPATIBILITY CONTRACT</p>
+          <h2 id="skill-heading">接入 Cover-Arts 启动器</h2>
+        </div>
+        <span class="scope-chip">约 1.5 秒</span>
+      </div>
+      <p class="section-intro">未接入情况下用户将重启设备再选择其他游戏，可选接入 Cover-Arts 兼容后可在玩法封面长按 UP 键返回 Cover-Arts 启动器。</p>
 
-  <section class="grid">
-    <article class="card">
-      <h3>只检查，不修改</h3>
-      <div class="copy-box" id="audit-prompt">请使用 $ai-passport-cover-arts-launcher 检查这个玩法能否接入仅封面页生效的 Up Long 返回协议。不要修改文件；列出封面状态、输入分发点、分区假设和仍需确认的真机项目。<button type="button" data-copy="audit-prompt">复制</button></div>
-    </article>
-    <article class="card">
-      <h3>面向玩家的文案</h3>
-      <div class="copy-box" id="player-copy">支持 Cover Arts Launcher 返回。在玩法封面长按上键约 1.5 秒，即可返回玩法库。<button type="button" data-copy="player-copy">复制</button></div>
-    </article>
-  </section>
+      <div class="compatibility-grid" aria-label="兼容级别">
+        <article class="skill-card">
+          <span class="card-index">DEFAULT</span>
+          <h3>通用兼容</h3>
+          <p>玩法正常启动和运行；复位或重新上电后返回 Launcher，原有名称和封面继续保留。</p>
+        </article>
+        <article class="skill-card skill-card-signal">
+          <span class="card-index">OPTIONAL</span>
+          <h3>可选增强</h3>
+          <p>在玩法封面长按上键约 1.5 秒，即可返回玩法库。</p>
+        </article>
+      </div>
 
-  <section class="card wide">
-    <h2>Skill 与素材</h2>
-    <p>Skill 包含双语 Agent 指引、协议与验收清单，以及不硬编码 factory 地址的 ESP-IDF 参考组件。</p>
-    <div class="downloads">
-      <a class="primary" href="/skills/ai-passport-cover-arts-launcher.zip">下载 Skill ZIP</a>
-      <a href="/skills/ai-passport-cover-arts-launcher/SKILL.md">查看 SKILL.md</a>
-      <a href="/skills/ai-passport-cover-arts-launcher/SKILL.zh_CN.md">中文指引</a>
-      <a href="/skills/ai-passport-cover-arts-launcher/references/protocol.zh_CN.md">协议与验收</a>
-    </div>
-  </section>
+      <section class="skill-step" aria-labelledby="integrate-heading">
+        <span class="step-index" aria-hidden="true">01</span>
+        <div class="step-body">
+          <h3 id="integrate-heading">交给 Agent 接入</h3>
+          <p class="supporting">将下面的指令发送给支持 Skill 的 Agent。</p>
+          <div class="prompt-box" id="integrate-prompt"><code>请先在当前玩法项目目录安装并使用 AI Passport Cover Arts Launcher Skill：
 
-  <footer>公开入口：<a href="https://cover-arts-launcher.yishan.app/skills">cover-arts-launcher.yishan.app/skills</a> · Skill 名称：<code>ai-passport-cover-arts-launcher</code></footer>
-</main>
-<script>
-  document.addEventListener("click", async (event) => {
-    const button = event.target.closest("[data-copy]");
-    if (!button) return;
-    const box = document.getElementById(button.dataset.copy);
-    const text = [...box.childNodes].filter((node) => node !== button).map((node) => node.textContent).join("").trim();
-    await navigator.clipboard.writeText(text);
-    const label = button.textContent;
-    button.textContent = "已复制";
-    setTimeout(() => { button.textContent = label; }, 1200);
-  });
-</script>
+npx skills add yishan/ai-passport-cover-arts-launcher -y
+
+如果 GitHub 安装不可用，可使用托管 ZIP 备用源：
+npx skills add https://calm.yishan.app/skills/ai-passport-cover-arts-launcher.zip --skill ai-passport-cover-arts-launcher -y
+
+如果当前环境无法运行 skills CLI，请直接读取主 Skill：
+https://calm.yishan.app/skills/ai-passport-cover-arts-launcher/SKILL.md
+
+然后使用 $ai-passport-cover-arts-launcher，仅在当前玩法已有的封面／开始页接入长按 Up 返回 Cover Arts Launcher。不要全局占用 Up Long，不要修改游戏、设置、暂停或其他状态的按键行为；如果项目没有可可靠识别的封面状态，先说明情况，不要擅自新增封面页。保留设备重启返回 Launcher 的兼容策略。安装 Skill 不代表授权烧录、commit、push 或发布。</code><button class="button copy-button" type="button" data-copy="integrate-prompt">复制指令</button></div>
+          <p class="skill-source">首选安装：<a href="https://github.com/yishan/ai-passport-cover-arts-launcher">GitHub 仓库</a> · <a href="https://www.skills.sh/yishan/ai-passport-cover-arts-launcher/ai-passport-cover-arts-launcher">skills.sh</a>；备用来源：<a href="/skills/ai-passport-cover-arts-launcher.zip" download>托管 ZIP</a> · <a href="https://calm.yishan.app/skills/ai-passport-cover-arts-launcher/SKILL.md">查看主 Skill</a>。默认安装到当前项目，不使用全局安装。</p>
+        </div>
+      </section>
+
+      <section class="skill-step" aria-labelledby="audit-heading">
+        <span class="step-index" aria-hidden="true">02</span>
+        <div class="step-body">
+          <h3 id="audit-heading">先检查，不修改</h3>
+          <p class="supporting">只需要兼容性结论时，使用审计模式。</p>
+          <div class="prompt-box" id="audit-prompt"><code>请使用 $ai-passport-cover-arts-launcher 检查这个玩法能否接入仅封面页生效的 Up Long 返回协议。不要修改文件；列出封面状态、输入分发点、分区假设和仍需确认的真机项目。</code><button class="button copy-button" type="button" data-copy="audit-prompt">复制审计指令</button></div>
+        </div>
+      </section>
+
+      <section class="skill-step outcome-step" aria-labelledby="outcome-heading">
+        <span class="step-index" aria-hidden="true">03</span>
+        <div class="step-body">
+          <p class="eyebrow">WHAT THE SKILL CHANGES</p>
+          <h3 id="outcome-heading">使用 Skill 后会发生什么</h3>
+          <p class="outcome-thesis">即使完全不接入，通用玩法仍可被 Cover-Arts Launcher 安装和启动，只是返回 Launcher 需要重启设备或重新上电。Skill 提供的是“封面页快捷返回”，不是安装或启动的兼容资格。</p>
+
+          <section class="outcome-block" aria-labelledby="process-heading">
+            <h4 id="process-heading">发生什么过程</h4>
+            <ol class="agent-flow">
+              <li><span>01</span><div><strong>交给 Agent</strong><p>开发者提供 <code translate="no">$ai-passport-cover-arts-launcher</code> 和当前玩法项目。</p></div></li>
+              <li><span>02</span><div><strong>先检查边界</strong><p>Agent 检查按键系统、状态机和已有封面／开始页，不直接改代码。</p></div></li>
+              <li><span>03</span><div><strong>能识别才接入</strong><p>只有能可靠识别封面状态时，才加入带状态门控的快捷返回并运行测试。</p></div></li>
+              <li><span>04</span><div><strong>无法识别就停止</strong><p>Agent 会说明阻碍，不全局监听 <span translate="no">Up Long</span>，也不擅自新增封面页。</p></div></li>
+            </ol>
+            <p class="permission-note">Skill 不自动授权烧录、commit、push 或发布；这些操作仍需开发者明确确认。</p>
+          </section>
+
+          <section class="outcome-block" aria-labelledby="comparison-heading">
+            <h4 id="comparison-heading">接入前／接入后</h4>
+            <div class="change-grid">
+              <article class="change-card change-card-before">
+                <span class="card-index">BEFORE · 通用兼容</span>
+                <h5>重启返回玩法库</h5>
+                <p>玩法可正常安装和启动。需要切换游戏时，重启设备或重新上电返回 Launcher。</p>
+              </article>
+              <article class="change-card change-card-after">
+                <span class="card-index">AFTER · 可选增强</span>
+                <h5>封面页快捷返回</h5>
+                <p>仅在玩法已有封面／开始页长按 Up 约 1.5 秒返回 Launcher。游戏、设置、暂停、结算及其他状态中的 Up Long 保持原有行为。</p>
+                <p>玩法标题、封面、规则、存档和正常启动流程不变；<code translate="no">factory</code> Launcher 缺失或无效时，只记录错误并保持玩法运行。</p>
+              </article>
+            </div>
+          </section>
+
+          <div class="technical-grid">
+            <section class="outcome-block technical-card" aria-labelledby="code-change-heading">
+              <h4 id="code-change-heading">代码层面变化</h4>
+              <p>通常只增加一个小型 <code translate="no">launcher_contract</code> ESP-IDF 组件，并在现有输入分发点加入状态门控：</p>
+              <pre><code translate="no">if (app_state == APP_STATE_COVER &amp;&amp;
+    input.event == UP_LONG) {
+    launcher_contract_return_to_factory();
+}</code></pre>
+              <p>组件在运行时查找并校验 <code translate="no">factory</code>，设置下次启动分区后重启。不能硬编码 <code translate="no">factory</code> 地址，也不能全局监听 <span translate="no">Up Long</span>。</p>
+            </section>
+
+            <section class="outcome-block unchanged-card" aria-labelledby="unchanged-heading">
+              <h4 id="unchanged-heading">不会发生的变化</h4>
+              <ul class="unchanged-list">
+                <li>不改变玩法 UI 风格、游戏规则、分区表、标题封面或存档</li>
+                <li>不增加网络依赖，也不要求 Launcher SDK</li>
+                <li>不把 Up Long 注册成全局快捷键</li>
+                <li>不要求所有社区玩法必须适配</li>
+                <li>除非创作者明确要求，不新增提示文字或弹窗</li>
+              </ul>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section class="download-panel" aria-labelledby="download-heading">
+        <div>
+          <p class="eyebrow">SKILL PACKAGE</p>
+          <h2 id="download-heading">下载指引、协议与参考组件</h2>
+          <p>ZIP 包含双语 Agent 指引、协议与验收清单，以及运行时查找并校验 <code>factory</code> 分区的 ESP-IDF 参考组件。</p>
+        </div>
+        <div class="download-actions">
+          <a class="button button-signal" href="/skills/ai-passport-cover-arts-launcher.zip" download>下载 Skill ZIP</a>
+          <a class="button button-secondary" href="/skills/ai-passport-cover-arts-launcher/SKILL.zh_CN.md">中文 Skill</a>
+          <a class="button button-secondary" href="/skills/ai-passport-cover-arts-launcher/SKILL.md">English Skill</a>
+          <a class="button button-secondary" href="/skills/ai-passport-cover-arts-launcher/references/protocol.zh_CN.md">协议与验收</a>
+        </div>
+      </section>
+    </section>
+
+    <p id="copy-status" class="copy-status" role="status" aria-live="polite" aria-atomic="true"></p>
+    <footer class="skill-footer">公开入口：<a href="https://calm.yishan.app/skills">calm.yishan.app/skills</a> · Skill：<code>ai-passport-cover-arts-launcher</code></footer>
+  </main>
+  <script type="module" src="/skills/skills.js"></script>
 </body>
 </html>

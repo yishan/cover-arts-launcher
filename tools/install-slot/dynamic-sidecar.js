@@ -210,6 +210,25 @@ export function decodeDynamicSidecarRecord(input) {
   }
 }
 
+export function reassignDynamicSidecarRecord(input, { slotId, generation }) {
+  const original = decodeDynamicSidecarRecord(input);
+  if (!original) throw new Error("Cannot reassign an invalid dynamic sidecar record.");
+  if (!Number.isInteger(slotId) || slotId < 0 || slotId >= DYNAMIC_MAX_SLOTS) {
+    throw new Error("Invalid reassigned dynamic slot id.");
+  }
+  if (!Number.isInteger(generation) || generation < 0 || generation > 0xffffffff) {
+    throw new Error("Invalid reassigned sidecar generation.");
+  }
+  const bytes = asBytes(input).slice(0, DYNAMIC_SIDECAR_RECORD_SIZE);
+  writeU32(bytes, 8, generation);
+  bytes[12] = slotId;
+  writeU32(bytes, CRC_OFFSET, crc32(bytes.subarray(0, CRC_OFFSET)));
+  if (!decodeDynamicSidecarRecord(bytes)) {
+    throw new Error("Reassigned dynamic sidecar record failed validation.");
+  }
+  return bytes;
+}
+
 function generationIsNewer(candidate, current) {
   const difference = (candidate - current) >>> 0;
   return difference !== 0 && difference < 0x80000000;

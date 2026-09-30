@@ -47,11 +47,13 @@ function headerDiagnostic(header) {
 }
 
 async function readRecord(loader, address, bank) {
+  const bytes = await readExact(
+    loader, address, DYNAMIC_SIDECAR_RECORD_SIZE, `Sidecar bank ${bank.toUpperCase()}`,
+  );
   return {
     bank,
-    record: decodeDynamicSidecarRecord(await readExact(
-      loader, address, DYNAMIC_SIDECAR_RECORD_SIZE, `Sidecar bank ${bank.toUpperCase()}`,
-    )),
+    bytes,
+    record: decodeDynamicSidecarRecord(bytes),
   };
 }
 
@@ -115,6 +117,7 @@ async function inspectPartitionFast(loader, partition) {
     trusted: true,
     trustSource: "dynamic-sidecar",
     activeSidecarBank: selected.bank,
+    sidecarRecordBytes: selected.bytes,
     generation: record.generation,
     title: record.title,
     sourceId: record.sourceId,
@@ -148,8 +151,9 @@ export async function inspectDynamicLibraryFast(loader, partitionTableSector = n
     slotCount: slots.length,
     nextOffset: layout.nextOffset,
     remainingBytes: layout.remainingBytes,
-    largestInstallableImage: layout.remainingBytes > DYNAMIC_SLOT_SIDECAR_SIZE
-      ? layout.remainingBytes - DYNAMIC_SLOT_SIDECAR_SIZE
+    freeRanges: layout.freeRanges,
+    largestInstallableImage: (layout.largestFreeRange?.size ?? 0) > DYNAMIC_SLOT_SIDECAR_SIZE
+      ? layout.largestFreeRange.size - DYNAMIC_SLOT_SIDECAR_SIZE
       : 0,
     arenaEnd: DYNAMIC_PLAY_ARENA_END,
   };

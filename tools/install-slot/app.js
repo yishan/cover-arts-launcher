@@ -1,39 +1,43 @@
 import { ESPLoader, Transport } from "./vendor/esptool-js-0.6.1.js";
-import { COVER_PAYLOAD_LENGTH, decodeCoverManifest, encodeCoverManifest, rgbaToCoverRgb565 } from "./cover-convert.js";
-import { selectValidCoverBank } from "./cover-bank.js";
+import { COVER_PAYLOAD_LENGTH, coverRgb565ToRgba, rgbaToCoverRgb565 } from "./cover-convert.js";
 import { coverCropRect, encodeCoverPreview } from "./cover-image.js";
-import { extractAppImage, parsePartitionTable, verifyEspImage } from "./extract-app-image.js";
-import { resetToApplication } from "./device-reset.js";
+import { encodePartitionTable, espImageLength, extractAppImage, parsePartitionTable } from "./extract-app-image.js";
+import { resetAndDisconnect, resetToApplication } from "./device-reset.js";
+import { protectLoaderFlashReads, protectTransportWrites } from "./serial-transport.js";
 import { managerApiUrl, normalizeOfficialPlay } from "./play-source.js";
-import { inspectAllSlotsFast } from "./slot-inspector.js";
-import { decodeTrustRecord, encodeTrustRecord, selectValidTrustBank } from "./trust-record.js";
 import { inspectLauncherTitle, requireLauncherTitle } from "./title-font.js";
 import {
-  buildSlotErasePlan,
-  buildSlotWritePlan,
-  recommendSlot,
-  reduceSlotInstall,
-  runSlotInstall,
-} from "./slot-install.js";
+  appendDynamicSlot,
+  dynamicPartitionEntries,
+  removeDynamicSlot,
+} from "./dynamic-layout.js";
 import {
-  COMPATIBLE_PARTITIONS,
-  SYSTEM_ERASE_RANGES,
-  classifySystemTarget,
-  makeEraseVerificationSamples,
-  runSystemInstall,
-} from "./system-install.js";
+  decodeDynamicSidecarRecord,
+  dynamicCoverMatchesRecord,
+  dynamicSidecarLayout,
+  encodeDynamicSidecarRecord,
+  reassignDynamicSidecarRecord,
+} from "./dynamic-sidecar.js";
+import { inspectDynamicLibraryFast } from "./dynamic-slot-inspector.js";
+import { DYNAMIC_EMPTY_PARTITIONS, SYSTEM_ERASE_RANGES, classifySystemTarget, makeEraseVerificationSamples } from "./system-install.js";
 
 const $ = (selector) => document.querySelector(selector);
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+// Sustained Web Serial writes at 460800 are unreliable on the Passport's
+// USB-JTAG bridge in Chromium-based browsers. Prefer a slower, stable session;
+// this affects transfer time only, not the image written to flash.
+const WEB_SERIAL_BAUDRATE = 115200;
 const state = {
+  port: null,
   transport: null,
   loader: null,
   target: null,
+  library: null,
   slots: [],
   sourceKind: "play-api",
   preparedPlay: null,
   preparedCover: null,
   coverPreviewUrl: null,
-  pendingCover: null,
   busy: false,
   coverBusy: false,
 };
@@ -54,7 +58,12 @@ function log(message, newline = true) {
 function setResult(selector, message, kind = "") {
   const target = $(selector);
   target.textContent = message;
-  target.className = `status ${kind}`;
+  target.className = `inline-message${kind ? ` ${kind}` : ""}`;
+}
+
+function setDeviceState(message, kind = "idle") {
+  $("#device-status").textContent = message;
+  document.querySelector(".device-dock").dataset.state = kind;
 }
 
 function updateTitleCheck() {
@@ -62,19 +71,23 @@ function updateTitleCheck() {
   const target = $("#title-check");
   if (result.empty) {
     target.textContent = "标题会显示在设备上；请输入内容。";
-    target.className = "status";
+    target.className = "inline-message";
   } else if (result.valid) {
     target.textContent = `设备字体可完整显示 · UTF-8 ${result.bytes}/64 bytes`;
-    target.className = "status ok";
+    target.className = "inline-message ok";
   } else if (result.tooLong) {
     target.textContent = `标题为 ${result.bytes} bytes，设备最多支持 64 bytes。`;
-    target.className = "status error";
+    target.className = "inline-message error";
   } else {
     const glyphs = result.unsupported.map(({ character, codePoint }) => `${character} (${codePoint})`).join("、");
     target.textContent = `设备字体未收录：${glyphs}`;
-    target.className = "status error";
+    target.className = "inline-message error";
   }
   return result.valid;
+}
+
+function scrollBehavior() {
+  return reducedMotion.matches ? "auto" : "smooth";
 }
 
 function toHex(bytes) {
@@ -127,7 +140,7 @@ async function writeSegments(segments, progressLabel) {
       compress: true,
       reportProgress: (_index, written) => {
         const percent = Math.min(100, Math.round((completed + written) / total * 100));
-        $("#device-status").textContent = `${progressLabel} ${percent}%`;
+        setDeviceState(`${progressLabel} ${percent}%`, "working");
       },
     });
     log(`${progressLabel}: Flash 会话已结束。`);
@@ -140,10 +153,10 @@ async function verifySegment(segment) {
   if (!equalBytes(actual, segment.data)) throw new Error(`0x${segment.address.toString(16)} 写后读取不一致。`);
 }
 
-function samePartitionTable(actual) {
-  return actual.length === COMPATIBLE_PARTITIONS.length && actual.every((entry, index) => {
-    const expected = COMPATIBLE_PARTITIONS[index];
-    return ["name", "type", "subtype", "offset", "size"].every((key) => entry[key] === expected[key]);
+function samePartitionTable(actual, expected = DYNAMIC_EMPTY_PARTITIONS) {
+  return actual.length === expected.length && actual.every((entry, index) => {
+    const wanted = expected[index];
+    return ["name", "type", "subtype", "offset", "size"].every((key) => entry[key] === wanted[key]);
   });
 }
 
@@ -159,24 +172,37 @@ async function readTargetIdentity() {
 async function connect() {
   if (state.busy) return;
   state.busy = true;
+  setResult("#device-message", "");
+  setDeviceState("正在连接并识别设备…", "working");
+  refreshActions();
   try {
     if (!navigator.serial) throw new Error("当前浏览器不支持 Web Serial。");
     log("请选择 AI Passport 串口；设备将进入下载模式。 ");
-    const port = await navigator.serial.requestPort();
-    state.transport = new Transport(port, false);
-    state.loader = new ESPLoader({ transport: state.transport, baudrate: 460800, terminal });
-    state.target = classifySystemTarget(await readTargetIdentity());
-    const label = state.target.kind === "compatible-launcher" ? "Launcher 布局" : state.target.kind === "single-factory" ? "单固件布局" : "未知布局";
-    $("#device-status").textContent = `已连接 · ${label}`;
-    $("#connect").disabled = true;
-    $("#disconnect").disabled = false;
+    state.port = await navigator.serial.requestPort();
+    state.transport = protectTransportWrites(new Transport(state.port, false));
+    state.loader = protectLoaderFlashReads(new ESPLoader({
+      transport: state.transport,
+      baudrate: WEB_SERIAL_BAUDRATE,
+      terminal,
+    }));
+    const identity = await readTargetIdentity();
+    state.target = classifySystemTarget(identity);
+    const label = state.target.kind === "dynamic-launcher" ? "动态 Launcher 布局"
+      : state.target.kind === "compatible-launcher" ? "旧版三位置 Launcher"
+        : state.target.kind === "single-factory" ? "单固件布局" : "未知布局";
+    setDeviceState(`已连接 · ${label}`, "connected");
     log(`目标识别：${label}`);
-    if (state.target.kind === "compatible-launcher") {
-      state.slots = await inspectSlots();
+    if (state.target.kind === "dynamic-launcher") {
+      state.library = await inspectDynamicLibraryFast(state.loader, identity.partitionTableSector);
+      state.slots = state.library.slots;
       renderSlots();
     } else {
+      state.library = null;
       state.slots = [];
       renderSlots();
+      if (state.target.kind === "compatible-launcher") {
+        setResult("#device-message", "检测到旧版三位置布局。请先在“初始化设备”中迁移为动态玩法库。", "error");
+      }
     }
     refreshActions();
   } catch (error) {
@@ -185,24 +211,71 @@ async function connect() {
     throw error;
   } finally {
     state.busy = false;
+    refreshActions();
   }
 }
 
 async function disconnect(updateLog = true) {
   try { await state.transport?.disconnect(); } catch {}
+  state.port = null;
   state.transport = null;
   state.loader = null;
   state.target = null;
+  state.library = null;
   state.slots = [];
-  state.pendingCover = null;
-  $("#retry-cover").hidden = true;
-  $("#finish-without-cover").hidden = true;
-  $("#device-status").textContent = "尚未连接";
-  $("#connect").disabled = false;
-  $("#disconnect").disabled = true;
+  setDeviceState("等待连接设备", "idle");
   renderSlots();
   refreshActions();
   if (updateLog) log("已断开设备。");
+}
+
+async function refreshContinuousSession() {
+  if (!state.port || !state.transport) throw new Error("串口授权已失效，请重新连接设备。");
+  setDeviceState("正在刷新连续安装会话…", "working");
+  log("上一款玩法已完成；正在自动刷新下载会话，避免长时间复用 stub 导致串口失步。");
+  try { await state.transport.disconnect(); } catch {}
+
+  state.transport = protectTransportWrites(new Transport(state.port, false));
+  state.loader = protectLoaderFlashReads(new ESPLoader({
+    transport: state.transport,
+    baudrate: WEB_SERIAL_BAUDRATE,
+    terminal,
+  }));
+  const identity = await readTargetIdentity();
+  state.target = classifySystemTarget(identity);
+  if (state.target.kind !== "dynamic-launcher") {
+    throw new Error("刷新后未识别到动态 Launcher 布局。");
+  }
+  state.library = await inspectDynamicLibraryFast(state.loader, identity.partitionTableSector);
+  state.slots = state.library.slots;
+  renderSlots();
+  setDeviceState("已连接 · 动态 Launcher 布局", "connected");
+  log("连续安装会话已自动刷新；无需重新选择串口。");
+}
+
+async function disconnectToApplication() {
+  if (state.busy || !state.transport) return;
+  state.busy = true;
+  setDeviceState("正在退出下载模式并重启…", "working");
+  refreshActions();
+  try {
+    await resetAndDisconnect(state.transport);
+    state.port = null;
+    state.transport = null;
+    state.loader = null;
+    state.target = null;
+    state.library = null;
+    state.slots = [];
+    setDeviceState("等待连接设备", "idle");
+    renderSlots();
+    log("已退出下载模式，设备已重启到 Launcher。");
+  } catch (error) {
+    log(`断开失败：${error.message}`);
+    setResult("#device-message", "未能自动退出下载模式，请重新上电设备。", "error");
+  } finally {
+    state.busy = false;
+    refreshActions();
+  }
 }
 
 async function verifyPublished(bytes, expected) {
@@ -230,57 +303,41 @@ async function installSystem() {
     if (!table.md5Valid || !samePartitionTable(table.entries)) throw new Error("发布镜像不是兼容的 Launcher 分区布局。");
     const factory = extractAppImage(full);
     if (factory.kind !== "merged" || factory.appOffset !== 0x10000) throw new Error("发布镜像缺少 0x10000 factory Launcher。");
-    await verifyEspImage(factory.data);
     const segments = [
       { name: "bootloader", address: 0x0, data: full.slice(0, 0x8000) },
       { name: "partition table", address: 0x8000, data: full.slice(0x8000, 0x9000) },
       { name: "factory Launcher", address: 0x10000, data: factory.data },
     ];
     log(`完整镜像 SHA-256 已确认：${actualSha}`);
-    const result = await runSystemInstall({
-      targetKind: state.target.kind,
-      async erase() {
-        setResult("#system-result", "正在清空三个玩法、六个封面银行和 OTA 选择…");
-        for (const range of SYSTEM_ERASE_RANGES) {
-          log(`擦除 ${range.name}：0x${range.address.toString(16)} + 0x${range.size.toString(16)}`);
-          await eraseRegion(range.address, range.size);
-        }
-        for (const range of SYSTEM_ERASE_RANGES) {
-          for (const sample of makeEraseVerificationSamples(range, 32)) {
-            if (!allErased(await state.loader.readFlash(sample.address, sample.length))) throw new Error(`${range.name} 擦除抽样校验失败。`);
-          }
-        }
-      },
-      async write() {
-        await writeSegments(segments, "安装 Launcher");
-      },
-      async verifySegments() {
-        for (const segment of segments) {
-          setResult("#system-result", `正在验证 ${segment.name}…`);
-          await verifySegment(segment);
-        }
-        const targetTable = parsePartitionTable(await state.loader.readFlash(0x8000, 0x1000));
-        if (!targetTable.md5Valid || !samePartitionTable(targetTable.entries)) throw new Error("设备上的 Launcher 分区表复核失败。");
-        const factoryReadback = await state.loader.readFlash(0x10000, factory.length);
-        if (await verifyEspImage(factoryReadback, 0) !== factory.length) throw new Error("设备上的 factory Launcher 未通过 checksum/SHA 校验。");
-      },
-      async verifyEmptyState() {
-        const otaData = await state.loader.readFlash(0x7fe000, 0x2000);
-        if (!allErased(otaData)) throw new Error("OTA 元数据不是空白状态，不能确认无玩法被选中。");
-        let emptySlots = 0;
-        for (const address of [0x180000, 0x380000, 0x580000]) {
-          if (allErased(await state.loader.readFlash(address, 32))) emptySlots++;
-        }
-        return { otaSelected: false, emptySlots };
-      },
-    });
-    if (result.error) throw result.error;
-    setResult("#system-result", "写入与读回验证完成：Launcher 镜像有效，三个玩法启动头为空；正在发送复位指令。", "ok");
+    setResult("#system-result", "正在清空动态玩法区和 OTA 选择…");
+    for (const range of SYSTEM_ERASE_RANGES) {
+      log(`擦除 ${range.name}：0x${range.address.toString(16)} + 0x${range.size.toString(16)}`);
+      await eraseRegion(range.address, range.size);
+    }
+    for (const range of SYSTEM_ERASE_RANGES) {
+      for (const sample of makeEraseVerificationSamples(range, 32)) {
+        if (!allErased(await state.loader.readFlash(sample.address, sample.length))) throw new Error(`${range.name} 擦除校验失败。`);
+      }
+    }
+    await writeSegments(segments, "安装 Launcher");
+    for (const segment of segments) {
+      setResult("#system-result", `正在验证 ${segment.name}…`);
+      await verifySegment(segment);
+    }
+    const targetTable = parsePartitionTable(await state.loader.readFlash(0x8000, 0x1000));
+    if (!targetTable.md5Valid || !samePartitionTable(targetTable.entries)) throw new Error("设备上的 Launcher 分区表复核失败。");
+    const factoryReadback = await state.loader.readFlash(0x10000, factory.length);
+    if (espImageLength(factoryReadback, 0) !== factory.length) throw new Error("设备上的 factory Launcher 不可读。");
+    const otaData = await state.loader.readFlash(0x7fe000, 0x2000);
+    if (!allErased(otaData)) throw new Error("OTA 元数据不是空白状态，不能确认无玩法被选中。");
+    const emptyLibrary = await inspectDynamicLibraryFast(state.loader);
+    if (emptyLibrary.slotCount !== 0) throw new Error("动态玩法库不是空白状态。");
+    setResult("#system-result", "安装与读回验证完成：Launcher 可读，动态玩法库为空。", "ok");
     $("#system-complete-actions").hidden = false;
     log("完整系统安装成功；正在重启到 Launcher。");
     await resetToApplication(state.transport);
-    setResult("#system-result", "数据写入和读回已验证，复位指令已发送。请在设备上确认 Launcher 已启动并显示空玩法库。", "ok");
     await disconnect(false);
+    setResult("#system-result", "安装与读回验证完成。设备已重启到空的 Launcher 玩法库。", "ok");
   } catch (error) {
     setResult("#system-result", `未完成：${error.message} 请重新进入 ROM 下载模式，并从完整安装开头重试。`, "error");
     log(`完整系统安装失败：${error.message}`);
@@ -290,8 +347,16 @@ async function installSystem() {
   }
 }
 
-async function inspectSlots() {
-  return inspectAllSlotsFast(state.loader);
+function drawSlotCover(canvas, payload) {
+  const decoded = coverRgb565ToRgba(payload);
+  canvas.width = decoded.width;
+  canvas.height = decoded.height;
+  const context = canvas.getContext("2d");
+  if (!context) return false;
+  const image = context.createImageData(decoded.width, decoded.height);
+  image.data.set(decoded.data);
+  context.putImageData(image, 0, 0);
+  return true;
 }
 
 function renderSlots() {
@@ -299,44 +364,113 @@ function renderSlots() {
   const select = $("#target-slot");
   container.replaceChildren();
   select.replaceChildren();
-  if (!state.slots.length) {
-    container.textContent = state.target?.kind === "compatible-launcher" ? "正在读取位置…" : "连接兼容 Launcher 后显示位置。";
-    select.append(new Option("请先连接兼容 Launcher", ""));
+  if (!state.loader || state.target?.kind !== "dynamic-launcher" || !state.library) {
+    select.append(new Option("请先连接动态 Launcher", ""));
+    container.append(createSlotCard({ slotId: 0, state: "ghost", title: "等待连接" }, true));
     updateReplacementWarning();
     return;
   }
+
   select.append(new Option("请选择", ""));
   for (const slot of state.slots) {
-    const stateLabel = slot.state === "empty"
-      ? "空"
-      : slot.state === "invalid"
-        ? "内容不完整"
-        : (slot.title || "玩法有效，缺少名称与封面");
-    const trustLabel = slot.state === "ready"
-      ? slot.trustSource === "install-receipt"
-        ? "已验证常驻"
-        : slot.trustSource === "legacy-cover"
-          ? "旧版封面凭据"
-          : "兼容模式"
-      : "";
-    const label = `位置 ${slot.slotId + 1} · ${stateLabel}${trustLabel ? ` · ${trustLabel}` : ""}`;
-    const item = document.createElement("div");
-    item.className = "slot";
-    item.textContent = label;
-    container.append(item);
+    const label = `位置 ${slot.slotId + 1} · ${slot.title || "已安装"}`;
+    container.append(createSlotCard(slot));
     select.append(new Option(label, String(slot.slotId)));
+  }
+  if (state.library.largestInstallableImage > 0 && state.slots.length < 16) {
+    select.append(new Option(`追加为位置 ${state.slots.length + 1}`, String(state.slots.length)));
+  }
+  if (state.slots.length === 0) {
+    const emptyState = document.createElement("p");
+    emptyState.className = "slot-empty-state";
+    emptyState.textContent = "玩法库为空。准备玩法后，可安装到位置 1。";
+    container.append(emptyState);
   }
   applyRecommendation();
   updateReplacementWarning();
 }
 
+function createSlotCard(slot, disabled = false) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `slot-card is-${slot.state}`;
+  button.dataset.slotId = String(slot.slotId);
+  button.disabled = disabled;
+  button.setAttribute("role", "radio");
+  button.setAttribute("aria-checked", "false");
+  button.setAttribute("aria-label", `位置 ${slot.slotId + 1}，${slot.state === "ready" ? (slot.title || "已安装玩法") : slot.state === "invalid" ? "安装记录不完整" : "等待连接设备"}`);
+
+  const art = document.createElement("span");
+  art.className = "slot-art";
+  if (slot.coverPayload) {
+    const cover = document.createElement("canvas");
+    cover.className = "slot-cover";
+    cover.setAttribute("aria-hidden", "true");
+    if (drawSlotCover(cover, slot.coverPayload)) {
+      art.classList.add("has-cover");
+      art.append(cover);
+    }
+  }
+  const number = document.createElement("strong");
+  number.textContent = String(slot.slotId + 1).padStart(2, "0");
+  const stateLabel = document.createElement("span");
+  stateLabel.textContent = slot.state === "ready" ? "READY" : slot.state === "invalid" ? "INVALID" : "OFFLINE";
+  art.append(number, stateLabel);
+
+  const copy = document.createElement("span");
+  copy.className = "slot-copy";
+  const title = document.createElement("strong");
+  title.textContent = slot.state === "ready" ? (slot.title || "已安装玩法") : slot.state === "invalid" ? "记录不完整" : "等待连接";
+  const meta = document.createElement("small");
+  meta.textContent = slot.state === "ready" ? (slot.sourceId || "可维护名称与封面") : slot.diagnostic || "读取设备后显示内容";
+  copy.append(title, meta);
+  button.append(art, copy);
+
+  if (!disabled) {
+    button.addEventListener("click", () => {
+      $("#target-slot").value = String(slot.slotId);
+      updateReplacementWarning();
+    });
+    button.addEventListener("keydown", (event) => {
+      const cards = [...document.querySelectorAll(".slot-card:not(:disabled)")];
+      const current = cards.indexOf(button);
+      let next = null;
+      if (["ArrowRight", "ArrowDown"].includes(event.key)) next = (current + 1) % cards.length;
+      if (["ArrowLeft", "ArrowUp"].includes(event.key)) next = (current - 1 + cards.length) % cards.length;
+      if (event.key === "Home") next = 0;
+      if (event.key === "End") next = cards.length - 1;
+      if (next === null) return;
+      event.preventDefault();
+      cards[next].click();
+      cards[next].focus();
+    });
+  }
+  return button;
+}
+
+function syncSlotCards() {
+  const selected = $("#target-slot").value;
+  const cards = [...document.querySelectorAll(".slot-card")];
+  const hasSelection = cards.some((button) => button.dataset.slotId === selected);
+  cards.forEach((button, index) => {
+    const isSelected = button.dataset.slotId === selected;
+    button.setAttribute("aria-checked", String(isSelected));
+    button.tabIndex = isSelected || (!hasSelection && index === 0) ? 0 : -1;
+    if (!button.classList.contains("is-ghost")) button.disabled = state.busy || !state.loader;
+  });
+  const slot = state.slots.find((item) => String(item.slotId) === selected);
+  const appendSelected = state.library?.largestInstallableImage > 0 &&
+    state.slots.length < 16 && selected === String(state.slots.length);
+  $("#slot-selection-hint").textContent = appendSelected
+    ? `将追加为位置 ${Number(selected) + 1} · 剩余 ${formatBytes(state.library?.remainingBytes ?? 0)}`
+    : slot ? `已选位置 ${slot.slotId + 1} · ${slot.title || slot.state}`
+      : state.library ? `已安装 ${state.library.slotCount} 个玩法` : "连接设备后显示玩法库";
+}
+
 function applyRecommendation() {
-  if (!state.slots.length || !state.preparedPlay) return;
-  const recommendation = recommendSlot(state.slots, state.preparedPlay.sourceId);
-  $("#target-slot").value = recommendation.slotId === null ? "" : String(recommendation.slotId);
-  log(recommendation.reason === "same-source" ? `建议原位更新位置 ${recommendation.slotId + 1}。`
-    : recommendation.reason === "first-empty" ? `建议使用第一个空位置 ${recommendation.slotId + 1}。`
-      : "三个位置均已占用，请手动选择要替换的位置。 ");
+  if (!state.library || state.library.largestInstallableImage <= 0 || state.slots.length >= 16) return;
+  $("#target-slot").value = String(state.slots.length);
+  if (state.preparedPlay) log(`将按顺序追加为位置 ${state.slots.length + 1}。`);
   updateReplacementWarning();
 }
 
@@ -410,7 +544,6 @@ async function loadPreferredCover() {
 async function preparePlay(bytes, metadata, expectedSha = "") {
   const sourceSha = await verifyPublished(bytes, expectedSha);
   const extracted = extractAppImage(bytes);
-  await verifyEspImage(extracted.data);
   const appShaBytes = await sha256(extracted.data);
   state.preparedPlay = {
     app: extracted.data,
@@ -462,7 +595,7 @@ async function resolvePlayUrl() {
       coverBytes,
     }, play.firmwareSha256);
     await loadPreferredCover();
-    setResult("#play-result", "标题、版本、Source ID、固件与封面均已读取；发布 SHA、App checksum 与 appended SHA 已确认。", "ok");
+    setResult("#play-result", "标题、版本、Source ID、固件与封面均已读取；发布 SHA 已确认。", "ok");
   } catch (error) {
     state.preparedPlay = null;
     clearCoverPreview("未能读取官方封面。");
@@ -486,7 +619,7 @@ async function prepareLocalFile() {
       version: $("#play-version").value.trim(),
     }, $("#play-sha").value.trim());
     await loadPreferredCover();
-    setResult("#play-result", "本地固件结构、checksum 与 appended SHA 已确认。", "ok");
+    setResult("#play-result", "本地固件结构与 SHA 已确认。", "ok");
   } catch (error) {
     state.preparedPlay = null;
     setResult("#play-result", `本地固件无效：${error.message}`, "error");
@@ -514,73 +647,116 @@ async function selectedCoverPayload() {
   return state.preparedCover?.payload ?? null;
 }
 
-async function writeCover({ slot, plan, payload, title, version, sourceId, sourceKind, appShaBytes }) {
-  if (!plan.cover || !payload || payload.length !== COVER_PAYLOAD_LENGTH) return;
-  const generation = (slot.generation + 1) >>> 0;
-  const manifest = encodeCoverManifest({ generation, slotId: slot.slotId, sourceKind, title, sourceId, version, firmwareSha256: appShaBytes, payload });
-  await eraseRegion(plan.cover.address, plan.cover.eraseSize);
-  const payloadSegment = { address: plan.cover.address + 0x1000, data: payload };
-  await writeSegments([payloadSegment], "写入封面");
-  await verifySegment(payloadSegment);
-  const manifestSegment = { address: plan.cover.address, data: manifest };
-  await writeSegments([manifestSegment], "提交封面清单");
-  await verifySegment(manifestSegment);
-  const installedManifest = decodeCoverManifest(await state.loader.readFlash(plan.cover.address, 256));
-  const installedPayload = await state.loader.readFlash(plan.cover.address + 0x1000, COVER_PAYLOAD_LENGTH);
-  const selected = selectValidCoverBank({
-    slotId: slot.slotId,
-    appSha256: appShaBytes,
-    banks: [{ bank: plan.cover.bank, manifest: installedManifest, payload: installedPayload }],
-  });
-  if (!selected) throw new Error("封面未通过 Launcher 的 App SHA 与 payload CRC 规则。");
+function installationTime() {
+  const now = new Date();
+  return {
+    epochSeconds: Math.floor(now.getTime() / 1000),
+    utcOffsetMinutes: -now.getTimezoneOffset(),
+  };
 }
 
-async function installIdentityFor(sourceId, title) {
-  if (sourceId) return sourceId;
-  const digest = await sha256(new TextEncoder().encode(`local:${title}`));
-  return `local-title:${toHex(digest).slice(0, 32)}`;
-}
-
-async function writeTrustReceipt({ slot, plan, appShaBytes, imageLength,
-  sourceId, title, installEvent = true }) {
-  const generation = (slot.trustGeneration + 1) >>> 0;
-  const identity = installEvent
-    ? await installIdentityFor(sourceId, title)
-    : (slot.installIdentity || await installIdentityFor(sourceId, title));
-  const now = Math.floor(Date.now() / 1000);
-  const utcOffset = -new Date().getTimezoneOffset();
-  const samePlay = slot.installIdentity === identity && slot.firstInstalledAt > 0;
-  const firstInstalledAt = installEvent
-    ? (samePlay ? slot.firstInstalledAt : now)
-    : slot.firstInstalledAt;
-  const lastInstalledAt = installEvent ? now : slot.lastInstalledAt;
-  const firstUtcOffsetMinutes = installEvent
-    ? (samePlay ? slot.firstUtcOffsetMinutes : utcOffset)
-    : slot.firstUtcOffsetMinutes;
-  const lastUtcOffsetMinutes = installEvent ? utcOffset : slot.lastUtcOffsetMinutes;
-  const record = encodeTrustRecord({
+async function writeDynamicSidecar({
+  slot,
+  payload,
+  title,
+  version,
+  sourceId,
+  sourceKind,
+  appShaBytes,
+  imageLength,
+  firstInstalledAt = null,
+  firstUtcOffsetMinutes = null,
+}) {
+  const clock = installationTime();
+  const layout = dynamicSidecarLayout(slot);
+  const generation = ((slot.generation ?? 0) + 1) >>> 0;
+  const bank = slot.activeSidecarBank === "a" ? "b" : "a";
+  const record = encodeDynamicSidecarRecord({
     generation,
     slotId: slot.slotId,
+    sourceKind,
+    title,
+    sourceId,
+    version,
     imageLength,
     firmwareSha256: appShaBytes,
-    firstInstalledAt,
-    lastInstalledAt,
-    firstUtcOffsetMinutes,
-    lastUtcOffsetMinutes,
-    sourceId: identity,
+    coverPayload: payload,
+    firstInstalledAt: firstInstalledAt ?? clock.epochSeconds,
+    lastInstalledAt: clock.epochSeconds,
+    firstUtcOffsetMinutes: firstUtcOffsetMinutes ?? clock.utcOffsetMinutes,
+    lastUtcOffsetMinutes: clock.utcOffsetMinutes,
   });
-  await eraseRegion(plan.trust.address, plan.trust.eraseSize);
-  const segment = { address: plan.trust.address, data: record };
-  await writeSegments([segment], "写入玩法信任收据");
+
+  if (payload) {
+    await eraseRegion(layout.payload.address, 0xa000);
+    const coverSegment = { address: layout.payload.address, data: payload };
+    await writeSegments([coverSegment], "写入 DPS1 封面");
+    await verifySegment(coverSegment);
+  }
+
+  const targetBank = bank === "a" ? layout.bankA : layout.bankB;
+  await eraseRegion(targetBank.address, targetBank.size);
+  const recordSegment = { address: targetBank.address, data: record };
+  await writeSegments([recordSegment], "提交 DPS1 记录");
+  await verifySegment(recordSegment);
+  const decoded = decodeDynamicSidecarRecord(await state.loader.readFlash(targetBank.address, record.length));
+  if (!decoded || decoded.slotId !== slot.slotId || decoded.imageLength !== imageLength ||
+      !equalBytes(decoded.firmwareSha256, appShaBytes)) {
+    throw new Error("DPS1 记录读回校验失败。");
+  }
+  if (payload) {
+    const installedPayload = await state.loader.readFlash(layout.payload.address, COVER_PAYLOAD_LENGTH);
+    if (!dynamicCoverMatchesRecord(decoded, installedPayload)) throw new Error("DPS1 封面 CRC 校验失败。");
+  }
+  return { bank, generation, record };
+}
+
+async function writeReassignedDynamicSidecar(slot, nextSlotId) {
+  if (!(slot.sidecarRecordBytes instanceof Uint8Array)) {
+    throw new Error(`位置 ${slot.slotId + 1} 缺少可迁移的 DPS1 记录。`);
+  }
+  const generation = ((slot.generation ?? 0) + 1) >>> 0;
+  const record = reassignDynamicSidecarRecord(slot.sidecarRecordBytes, {
+    slotId: nextSlotId,
+    generation,
+  });
+  const layout = dynamicSidecarLayout(slot);
+  const bank = slot.activeSidecarBank === "a" ? "b" : "a";
+  const targetBank = bank === "a" ? layout.bankA : layout.bankB;
+  await eraseRegion(targetBank.address, targetBank.size);
+  const segment = { address: targetBank.address, data: record };
+  await writeSegments([segment], `重排位置 ${slot.slotId + 1} → ${nextSlotId + 1}`);
   await verifySegment(segment);
-  const installed = decodeTrustRecord(await state.loader.readFlash(plan.trust.address, record.length));
-  const selected = selectValidTrustBank({
-    slotId: slot.slotId,
-    appSha256: appShaBytes,
-    imageLength,
-    banks: [{ bank: plan.trust.bank, record: installed }],
-  });
-  if (!selected) throw new Error("玩法信任收据未通过 slot、App SHA 与长度校验。");
+  const decoded = decodeDynamicSidecarRecord(await state.loader.readFlash(targetBank.address, record.length));
+  if (!decoded || decoded.slotId !== nextSlotId || decoded.generation !== generation ||
+      !equalBytes(decoded.firmwareSha256, slot.appShaBytes)) {
+    throw new Error(`位置 ${slot.slotId + 1} 的重排记录读回校验失败。`);
+  }
+  return { bank, generation };
+}
+
+async function commitDynamicTable(slots, onWritten = () => {}) {
+  const tableBytes = encodePartitionTable(dynamicPartitionEntries(slots));
+  const decoded = parsePartitionTable(tableBytes);
+  if (!decoded.md5Valid || !samePartitionTable(decoded.entries, dynamicPartitionEntries(slots))) {
+    throw new Error("新分区表在写入前未通过 MD5 与布局校验。");
+  }
+  await eraseRegion(0x8000, 0x1000);
+  const tableSegment = { address: 0x8000, data: tableBytes };
+  await writeSegments([tableSegment], "提交动态分区表");
+  onWritten();
+  await verifySegment(tableSegment);
+  const installed = parsePartitionTable(await state.loader.readFlash(0x8000, 0x1000));
+  if (!installed.md5Valid || !samePartitionTable(installed.entries, decoded.entries)) {
+    throw new Error("设备上的动态分区表读回校验失败。");
+  }
+}
+
+async function clearOtaSelection() {
+  await eraseRegion(0x7fe000, 0x2000);
+  if (!allErased(await state.loader.readFlash(0x7fe000, 0x2000))) {
+    throw new Error("OTA 选择区擦除校验失败。");
+  }
 }
 
 function hidePlayCompletion() {
@@ -590,7 +766,7 @@ function hidePlayCompletion() {
 function showPlayCompletion({ slotId, title, version, hasCover }) {
   $("#complete-title").textContent = title;
   $("#complete-meta").textContent = `位置 ${slotId + 1}${version ? ` · 版本 ${version}` : ""} · ${hasCover ? "封面已校验" : "使用占位图"}`;
-  $("#complete-reset").textContent = "数据已提交，正在执行最终重启…";
+  $("#complete-reset").textContent = "数据已提交，设备保持连接。可以继续安装，全部完成后再重启。";
   const image = $("#complete-cover");
   if (hasCover && state.coverPreviewUrl) {
     image.src = state.coverPreviewUrl;
@@ -602,119 +778,135 @@ function showPlayCompletion({ slotId, title, version, hasCover }) {
     $("#complete-cover-placeholder").hidden = false;
   }
   $("#play-complete").hidden = false;
-  $("#play-complete").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  $("#play-complete").scrollIntoView({ behavior: scrollBehavior(), block: "nearest" });
 }
 
-async function installPlay() {
-  if (state.busy) return;
+async function prepareAnotherPlay() {
+  if (state.busy || !state.transport) return;
   state.busy = true;
-  state.pendingCover = null;
-  $("#retry-cover").hidden = true;
-  $("#finish-without-cover").hidden = true;
-  hidePlayCompletion();
+  refreshActions();
   try {
-    if (!state.loader || state.target?.kind !== "compatible-launcher") throw new Error("请先连接兼容 Launcher 布局。");
-    if (!state.preparedPlay) throw new Error("请先载入并验证玩法固件。");
-    const slotId = Number.parseInt($("#target-slot").value, 10);
-    const slot = state.slots.find((item) => item.slotId === slotId);
-    if (!slot) throw new Error("请选择目标位置。");
-    if (slot.state !== "empty" && !$("#replace-confirm").checked) throw new Error("替换已占用位置前必须明确确认。");
-    state.preparedPlay.title = requireLauncherTitle($("#play-title").value);
-    state.preparedPlay.version = $("#play-version").value.trim();
-    state.preparedPlay.sourceId = $("#play-source-id").value.trim();
-    if (state.preparedPlay.sourceKind === "play-api" && !state.preparedPlay.sourceId) throw new Error("Play API 来源必须保留 Source ID。");
-    const cover = await selectedCoverPayload();
-    const plan = buildSlotWritePlan({
-      slotId,
-      appLength: state.preparedPlay.app.length,
-      activeCoverBank: slot.activeCoverBank,
-      activeTrustBank: slot.activeTrustBank,
-      hasCover: Boolean(cover),
-    });
-    const appSegment = { address: plan.app.address, data: state.preparedPlay.app };
-    const coverWrite = { slot, plan, payload: cover, ...state.preparedPlay };
-    const result = await runSlotInstall({
-      slotId,
-      hasCover: Boolean(cover),
-      async eraseApp() {
-        setResult("#play-result", `正在擦除位置 ${slotId + 1}…`);
-        await eraseRegion(plan.app.address, plan.app.eraseSize);
-      },
-      async writeApp() {
-        await writeSegments([appSegment], `安装位置 ${slotId + 1}`);
-      },
-      async verifyApp() {
-        setResult("#play-result", `正在验证位置 ${slotId + 1} 的 App checksum、SHA 与读回内容…`);
-        const readback = await state.loader.readFlash(plan.app.address, state.preparedPlay.app.length);
-        if (toHex(await sha256(readback)) !== state.preparedPlay.appSha) throw new Error("App SHA 写后校验失败。");
-        await verifyEspImage(readback);
-        log(`位置 ${slotId + 1} App SHA 与 ESP 镜像校验已通过：${state.preparedPlay.appSha}`);
-      },
-      async invalidateApp() {
-        await eraseRegion(plan.app.address, 0x1000);
-        return allErased(await state.loader.readFlash(plan.app.address, 32));
-      },
-      async writeTrust() {
-        setResult("#play-result", `正在为位置 ${slotId + 1} 写入与 App SHA 绑定的信任收据…`);
-        await writeTrustReceipt({
-          slot,
-          plan,
-          appShaBytes: state.preparedPlay.appShaBytes,
-          imageLength: state.preparedPlay.app.length,
-          sourceId: state.preparedPlay.sourceId,
-          title: state.preparedPlay.title,
-        });
-      },
-      async writeCover() {
-        await writeCover(coverWrite);
-      },
-    });
-
-    if (result.session.phase === "incomplete") {
-      const recovery = result.session.deviceState === "unbootable"
-        ? "清理后已读回确认启动头为空；重新连接后从擦除 App 开始重试。"
-        : `无法确认该位置当前状态；重新连接后必须重新扫描再决定下一步${result.session.cleanupError ? `（清理失败：${result.session.cleanupError}）` : ""}。`;
-      setResult("#play-result", `玩法安装未完成：${result.error.message}。${recovery}`, "error");
-      log(`玩法安装失败：${result.error.message}；位置状态：${result.session.deviceState}。`);
-      return;
-    }
-
-    const completion = {
-      slotId,
-      title: state.preparedPlay.title,
-      version: state.preparedPlay.version,
-    };
-    if (result.session.phase === "partial-success") {
-      state.pendingCover = { write: coverWrite, session: result.session, completion };
-      $("#retry-cover").hidden = false;
-      $("#finish-without-cover").hidden = false;
-      setResult("#play-result", `App 已通过 checksum、SHA 与读回验证，但封面未提交：${result.error.message}。可仅重试封面，或使用占位图完成并重启。`, "error");
-      return;
-    }
-    await finishVerifiedInstall({ ...completion, hasCover: Boolean(cover) });
+    await refreshContinuousSession();
   } catch (error) {
-    setResult("#play-result", `安装流程未完成：${error.message}。设备状态尚未确认，请重新连接后扫描位置。`, "error");
-    log(`安装流程异常：${error.message}`);
+    setResult("#device-message", `无法刷新连续安装会话：${error.message}`, "error");
+    log(`连续安装会话刷新失败：${error.message}`);
+    await disconnect(false);
+    return;
+  } finally {
+    state.busy = false;
+    refreshActions();
+  }
+  hidePlayCompletion();
+  state.preparedPlay = null;
+  clearCoverPreview();
+  $("#play-url").value = "";
+  $("#play-file").value = "";
+  $("#play-sha").value = "";
+  $("#cover-file").value = "";
+  $("#play-title").value = state.sourceKind === "local" ? "Local Play" : "";
+  $("#play-version").value = "";
+  $("#play-source-id").value = "";
+  $("#play-meta-summary").hidden = true;
+  $("#image-info").textContent = "尚未载入固件。";
+  setResult("#play-result", "设备授权保持不变，下载会话已自动刷新；请准备下一个玩法。", "ok");
+  refreshActions();
+  const nextInput = state.sourceKind === "local" ? $("#play-file") : $("#play-url");
+  nextInput.focus();
+  window.scrollTo({ top: $("#play-panel").offsetTop - 16, behavior: scrollBehavior() });
+}
+
+async function finishPlaySession() {
+  if (state.busy || !state.transport) return;
+  state.busy = true;
+  setDeviceState("正在完成连续安装并重启…", "working");
+  $("#complete-reset").textContent = "正在重启设备并退出下载模式…";
+  refreshActions();
+  try {
+    await resetAndDisconnect(state.transport);
+    state.port = null;
+    state.transport = null;
+    state.loader = null;
+    state.target = null;
+    state.library = null;
+    state.slots = [];
+    setDeviceState("等待连接设备", "idle");
+    renderSlots();
+    $("#complete-reset").textContent = "设备已重启到 Launcher，网页串口已断开。";
+    log("连续安装会话已完成；设备已重启到 Launcher。");
+  } catch (error) {
+    $("#complete-reset").textContent = "玩法均已提交，但未确认最终重启；请手动重启设备。";
+    setResult("#device-message", "未能自动退出下载模式，请重新上电设备。", "error");
+    log(`连续安装已完成，但最终重启失败：${error.message}。`);
   } finally {
     state.busy = false;
     refreshActions();
   }
 }
 
-async function finishVerifiedInstall({ slotId, title, version, hasCover }) {
-  setResult("#play-result", `位置 ${slotId + 1} 的 Flash 数据已验证；正在发送复位指令。`, "ok");
-  showPlayCompletion({ slotId, title, version, hasCover });
+async function installPlay() {
+  if (state.busy) return;
+  state.busy = true;
+  hidePlayCompletion();
+  let plan;
+  let tableCommitStarted = false;
+  let tableWritten = false;
   try {
-    log(`位置 ${slotId + 1} 的数据已提交；正在发送最终复位脉冲。`);
-    await resetToApplication(state.transport);
-    $("#complete-reset").textContent = "复位指令已发送，网页已断开串口。请在设备上确认 Launcher 已显示该玩法。";
-    log("复位指令已发送；Launcher 画面仍需在设备上确认。");
+    if (!state.loader || state.target?.kind !== "dynamic-launcher" || !state.library) throw new Error("请先连接动态 Launcher 布局。");
+    if (!state.preparedPlay) throw new Error("请先载入并验证玩法固件。");
+    if ($("#target-slot").value !== String(state.slots.length)) throw new Error("新增玩法只能追加到玩法库末尾。");
+    if (state.slots.some((slot) => slot.state !== "ready")) throw new Error("玩法库包含无效记录，请先恢复完整系统，不能继续追加。");
+    state.preparedPlay.title = requireLauncherTitle($("#play-title").value);
+    state.preparedPlay.version = $("#play-version").value.trim();
+    state.preparedPlay.sourceId = $("#play-source-id").value.trim();
+    if (state.preparedPlay.sourceKind === "play-api" && !state.preparedPlay.sourceId) throw new Error("Play API 来源必须保留 Source ID。");
+    const cover = await selectedCoverPayload();
+    plan = appendDynamicSlot(state.slots, state.preparedPlay.app.length);
+    const slot = plan.slot;
+    setResult("#play-result", `正在分配位置 ${slot.slotId + 1}：${formatBytes(slot.size)}…`);
+    await eraseRegion(slot.offset, slot.size);
+    for (const sample of makeEraseVerificationSamples({ address: slot.offset, size: slot.size }, 32)) {
+      if (!allErased(await state.loader.readFlash(sample.address, sample.length))) throw new Error("新玩法区域擦除校验失败。");
+    }
+    const appSegment = { address: slot.offset, data: state.preparedPlay.app };
+    await writeSegments([appSegment], `安装位置 ${slot.slotId + 1}`);
+    const readback = await state.loader.readFlash(slot.offset, state.preparedPlay.app.length);
+    if (toHex(await sha256(readback)) !== state.preparedPlay.appSha) throw new Error("App SHA 写后校验失败。");
+    if (espImageLength(readback) !== state.preparedPlay.app.length) throw new Error("App 结构读回校验失败。");
+    log(`位置 ${slot.slotId + 1} App SHA 已验证：${state.preparedPlay.appSha}`);
+    await writeDynamicSidecar({ slot, payload: cover, imageLength: state.preparedPlay.app.length, ...state.preparedPlay });
+
+    tableCommitStarted = true;
+    setResult("#play-result", "App 与 DPS1 已验证，正在最后提交玩法目录…");
+    await commitDynamicTable(plan.slots, () => { tableWritten = true; });
+    await clearOtaSelection();
+    state.library = await inspectDynamicLibraryFast(state.loader);
+    state.slots = state.library.slots;
+    const rescanned = state.slots[slot.slotId];
+    if (!rescanned || rescanned.state !== "ready" || rescanned.title !== state.preparedPlay.title) {
+      throw new Error("提交后的玩法库重新扫描未找到新玩法。");
+    }
+    setResult("#play-result", `位置 ${slot.slotId + 1} 安装完成，可以继续安装其他玩法；目录、App、DPS1 与封面均已读回验证。`, "ok");
+    showPlayCompletion({
+      slotId: slot.slotId,
+      title: state.preparedPlay.title,
+      version: state.preparedPlay.version,
+      hasCover: Boolean(cover),
+    });
+    renderSlots();
+    state.preparedPlay = null;
+    log(`位置 ${slot.slotId + 1} 已安装并重新扫描确认；保持连接等待下一项操作。`);
   } catch (error) {
-    $("#complete-reset").textContent = "Flash 数据已验证，但复位指令未确认完成；请手动重启设备并检查 Launcher。";
-    log(`Flash 数据已验证，但复位失败：${error.message}。`);
-  } finally {
-    await disconnect(false);
+    const recovery = tableWritten
+      ? "玩法目录已写入，但安装后确认被中断。请重新连接设备并扫描：若新玩法已出现在列表中，安装已经完成；只有无法识别动态玩法库时才使用完整系统安装恢复。"
+      : tableCommitStarted
+        ? "玩法目录写入被中断，完整性无法确认。请重新连接设备；若无法识别动态玩法库，请使用完整系统安装恢复。"
+        : "旧玩法目录保持不变，未完成数据不可启动；可重新连接后重试。";
+    setResult("#play-result", `玩法安装不完整：${error.message}。${recovery}`, "error");
+    log(`玩法安装失败：${error.message}`);
   }
+
+  state.busy = false;
+  refreshActions();
 }
 
 async function repairMetadataCover() {
@@ -724,41 +916,27 @@ async function repairMetadataCover() {
   let repaired = false;
   let slotId = null;
   try {
-    if (!state.loader || state.target?.kind !== "compatible-launcher") throw new Error("请先连接兼容 Launcher 布局。");
+    if (!state.loader || state.target?.kind !== "dynamic-launcher") throw new Error("请先连接动态 Launcher 布局。");
     if (!state.preparedPlay || !state.preparedCover) throw new Error("请先载入玩法固件和封面。");
     slotId = Number.parseInt($("#target-slot").value, 10);
     const slot = state.slots.find((item) => item.slotId === slotId);
-    if (!slot || slot.state === "empty") throw new Error("请选择已安装该玩法的位置。");
+    if (!slot || slot.state !== "ready") throw new Error("请选择已安装且记录完整的玩法。");
     state.preparedPlay.title = requireLauncherTitle($("#play-title").value);
     state.preparedPlay.version = $("#play-version").value.trim();
     state.preparedPlay.sourceId = $("#play-source-id").value.trim();
 
     setResult("#play-result", `正在核对位置 ${slotId + 1} 的 App SHA；不会擦除 App…`);
-    const address = 0x180000 + slotId * 0x200000;
-    const readback = await state.loader.readFlash(address, state.preparedPlay.app.length);
+    if (slot.imageLength !== state.preparedPlay.app.length) throw new Error("位置中的 App 长度与当前玩法不一致。");
+    const readback = await state.loader.readFlash(slot.offset, slot.imageLength);
     if (toHex(await sha256(readback)) !== state.preparedPlay.appSha) {
       throw new Error("位置中的 App SHA 与当前玩法不一致，已拒绝修改名称和封面。");
     }
-    const plan = buildSlotWritePlan({
-      slotId,
-      appLength: state.preparedPlay.app.length,
-      activeCoverBank: slot.activeCoverBank,
-      activeTrustBank: slot.activeTrustBank,
-      hasCover: true,
-    });
-    await writeTrustReceipt({
+    await writeDynamicSidecar({
       slot,
-      plan,
-      appShaBytes: state.preparedPlay.appShaBytes,
-      imageLength: state.preparedPlay.app.length,
-      sourceId: state.preparedPlay.sourceId,
-      title: state.preparedPlay.title,
-      installEvent: false,
-    });
-    await writeCover({
-      slot,
-      plan,
       payload: state.preparedCover.payload,
+      imageLength: slot.imageLength,
+      firstInstalledAt: slot.firstInstalledAt,
+      firstUtcOffsetMinutes: slot.firstUtcOffsetMinutes,
       ...state.preparedPlay,
     });
     repaired = true;
@@ -769,7 +947,8 @@ async function repairMetadataCover() {
       version: state.preparedPlay.version,
       hasCover: true,
     });
-    state.slots = await inspectSlots();
+    state.library = await inspectDynamicLibraryFast(state.loader);
+    state.slots = state.library.slots;
     renderSlots();
   } catch (error) {
     setResult("#play-result", `名称与封面修复未完成：${error.message}`, "error");
@@ -785,7 +964,7 @@ async function repairMetadataCover() {
   try {
     log(`位置 ${slotId + 1} 的名称与封面已提交；正在执行最终重启。`);
     await resetToApplication(state.transport);
-    $("#complete-reset").textContent = "复位指令已发送，网页已断开串口。请在设备上确认 Launcher 已显示这里的名称和封面。";
+    $("#complete-reset").textContent = "设备已重启，网页已断开串口；Launcher 应显示这里的名称和封面。";
   } catch (error) {
     $("#complete-reset").textContent = "名称与封面已写入，但未确认自动重启；请手动重启设备后检查 Launcher。";
     log(`修复已成功，但未收到最终重启确认：${error.message}。`);
@@ -799,79 +978,65 @@ async function repairMetadataCover() {
 async function eraseSelectedSlot() {
   if (state.busy) return;
   state.busy = true;
+  let tableCommitStarted = false;
+  let tableWritten = false;
+  let removedSlot = null;
   try {
-    if (!state.loader || state.target?.kind !== "compatible-launcher") throw new Error("请先连接兼容 Launcher 布局。");
+    if (!state.loader || state.target?.kind !== "dynamic-launcher") throw new Error("请先连接动态 Launcher 布局。");
     const slotId = Number.parseInt($("#target-slot").value, 10);
     const slot = state.slots.find((item) => item.slotId === slotId);
     if (!slot) throw new Error("请选择要擦除的位置。");
+    if (state.slots.some((item) => item.state !== "ready")) {
+      throw new Error("玩法库包含不完整记录，不能安全重排。");
+    }
     if (!$("#erase-confirm").checked) throw new Error("请先确认擦除所选位置。");
 
-    const plan = buildSlotErasePlan(slotId);
-    setResult("#play-result", `正在擦除位置 ${slotId + 1} 的玩法、封面和信任收据…`);
-    log(`擦除位置 ${slotId + 1} App：0x${plan.app.address.toString(16)} + 0x${plan.app.eraseSize.toString(16)}`);
-    await eraseRegion(plan.app.address, plan.app.eraseSize);
-    log(`擦除位置 ${slotId + 1} 封面：0x${plan.covers.address.toString(16)} + 0x${plan.covers.eraseSize.toString(16)}`);
-    await eraseRegion(plan.covers.address, plan.covers.eraseSize);
-    log(`擦除位置 ${slotId + 1} 信任收据：0x${plan.trust.address.toString(16)} + 0x${plan.trust.eraseSize.toString(16)}`);
-    await eraseRegion(plan.trust.address, plan.trust.eraseSize);
+    const plan = removeDynamicSlot(state.slots, slotId);
+    removedSlot = plan.removedSlot;
+    setResult("#play-result", `正在移除位置 ${slotId + 1}，并重排后续 ${plan.moves.length} 个玩法…`);
+    for (const move of plan.moves) {
+      const source = state.slots[move.previousSlotId];
+      await writeReassignedDynamicSidecar(source, move.slotId);
+    }
+    tableCommitStarted = true;
+    await commitDynamicTable(plan.slots, () => { tableWritten = true; });
+    await clearOtaSelection();
+    state.library = await inspectDynamicLibraryFast(state.loader);
+    state.slots = state.library.slots;
+    if (state.slots.length !== plan.slots.length || state.slots.some((item, index) =>
+      item.state !== "ready" || !equalBytes(item.appShaBytes, plan.slots[index].appShaBytes))) {
+      throw new Error("逻辑重排后的玩法库读回校验失败。");
+    }
+    renderSlots();
 
-    for (const range of [plan.app, plan.covers, plan.trust]) {
-      for (const sample of makeEraseVerificationSamples({ address: range.address, size: range.eraseSize }, 32)) {
-        if (!allErased(await state.loader.readFlash(sample.address, sample.length))) {
-          throw new Error(`0x${range.address.toString(16)} 擦除校验失败。`);
-        }
+    log(`擦除已释放空洞：0x${slot.offset.toString(16)} + 0x${slot.size.toString(16)}`);
+    await eraseRegion(slot.offset, slot.size);
+    for (const sample of makeEraseVerificationSamples({ address: slot.offset, size: slot.size }, 32)) {
+      if (!allErased(await state.loader.readFlash(sample.address, sample.length))) {
+        throw new Error(`0x${slot.offset.toString(16)} 擦除校验失败。`);
       }
     }
 
-    state.slots = await inspectSlots();
-    renderSlots();
     $("#erase-confirm").checked = false;
-    setResult("#play-result", `位置 ${slotId + 1} 已擦除，头尾抽样和启动头均为空；Launcher、NVS 和其他位置未修改。`, "ok");
-    log(`位置 ${slotId + 1} 擦除完成。`);
+    setResult("#play-result", `原位置 ${slotId + 1} 已移除；后续玩法已连续重排，释放空间会自动优先复用。`, "ok");
+    log(`位置 ${slotId + 1} 删除、逻辑重排与空洞擦除完成。`);
   } catch (error) {
-    setResult("#play-result", `位置擦除未完成：${error.message} 请重新连接并复核该位置。`, "error");
+    if (tableWritten) {
+      try {
+        state.library = await inspectDynamicLibraryFast(state.loader);
+        state.slots = state.library.slots;
+        renderSlots();
+      } catch {
+        // Keep the original error and recovery instruction.
+      }
+    }
+    const recovery = tableWritten
+      ? `玩法目录已经提交${removedSlot ? "；未擦净的释放区域会在下次安装前重新擦除" : ""}。请保持设备连接并重新扫描；若分区表无法识别，再执行完整系统恢复。`
+      : tableCommitStarted
+        ? "分区表提交已经开始，请重新连接并扫描；若无法识别动态玩法库，执行完整系统恢复。"
+        : "设备目录未修改。";
+    setResult("#play-result", `位置擦除未完成：${error.message} ${recovery}`, "error");
     log(`位置擦除失败：${error.message}`);
-  } finally {
-    state.busy = false;
-    refreshActions();
-  }
-}
-
-async function retryCover() {
-  if (!state.pendingCover || !state.loader || state.busy) return;
-  state.busy = true;
-  try {
-    const pending = state.pendingCover;
-    await writeCover(pending.write);
-    pending.session = reduceSlotInstall(pending.session, { type: "cover-retry-succeeded" });
-    if (pending.session.phase !== "completed") throw new Error("封面状态机未进入完成状态。");
-    state.pendingCover = null;
-    $("#retry-cover").hidden = true;
-    $("#finish-without-cover").hidden = true;
-    setResult("#play-result", "封面重试成功并通过 App SHA 与 payload CRC 验证；正在重启。", "ok");
-    await finishVerifiedInstall({ ...pending.completion, hasCover: true });
-  } catch (error) {
-    setResult("#play-result", `封面仍未完成：${error.message}`, "error");
-  } finally {
-    state.busy = false;
-    refreshActions();
-  }
-}
-
-async function finishWithoutCover() {
-  if (!state.pendingCover || !state.loader || state.busy) return;
-  state.busy = true;
-  try {
-    const pending = state.pendingCover;
-    pending.session = reduceSlotInstall(pending.session, { type: "finish-without-cover" });
-    if (pending.session.phase !== "completed") throw new Error("占位图完成状态无效。");
-    state.pendingCover = null;
-    $("#retry-cover").hidden = true;
-    $("#finish-without-cover").hidden = true;
-    setResult("#play-result", "App 已验证；本次不写入封面，Launcher 将使用占位图。正在重启。", "ok");
-    await finishVerifiedInstall({ ...pending.completion, hasCover: false });
-  } catch (error) {
-    setResult("#play-result", `无法使用占位图完成：${error.message}`, "error");
   } finally {
     state.busy = false;
     refreshActions();
@@ -880,32 +1045,54 @@ async function finishWithoutCover() {
 
 function updateReplacementWarning() {
   const slot = state.slots.find((item) => String(item.slotId) === $("#target-slot").value);
-  const replacing = slot && slot.state !== "empty";
-  $("#replace-label").hidden = !replacing;
-  if (!replacing) $("#replace-confirm").checked = false;
+  $("#replace-label").hidden = true;
+  $("#replace-confirm").checked = false;
   $("#erase-label").hidden = !slot;
   $("#erase-confirm").checked = false;
+  syncSlotCards();
   refreshActions();
 }
 
 function refreshActions() {
+  $("#main-content").setAttribute("aria-busy", String(state.busy || state.coverBusy));
+  $("#connect").disabled = state.busy || Boolean(state.loader);
+  $("#disconnect").disabled = state.busy || !state.transport;
   const systemReady = state.loader && state.target?.canInstall && $("#system-confirm").checked && $("#system-file").files.length && /^[0-9a-fA-F]{64}$/.test($("#system-sha").value.trim());
   $("#install-system").disabled = state.busy || !systemReady;
   const chosen = state.slots.find((item) => String(item.slotId) === $("#target-slot").value);
-  const replacementConfirmed = !chosen || chosen.state === "empty" || $("#replace-confirm").checked;
-  const titleValid = inspectLauncherTitle($("#play-title").value).valid;
-  $("#install-play").disabled = state.busy || state.coverBusy || !state.loader || state.target?.kind !== "compatible-launcher" || !state.preparedPlay || !chosen || !replacementConfirmed || !titleValid;
-  $("#repair-cover").disabled = state.busy || state.coverBusy || !state.loader || state.target?.kind !== "compatible-launcher" || !state.preparedPlay || !state.preparedCover || !chosen || chosen.state === "empty" || !titleValid;
-  $("#erase-slot").disabled = state.busy || state.coverBusy || !state.loader || state.target?.kind !== "compatible-launcher" || !chosen || !$("#erase-confirm").checked;
+  const appendSelected = $("#target-slot").value === String(state.slots.length);
+  const fits = Boolean(state.preparedPlay && state.library && state.preparedPlay.app.length <= state.library.largestInstallableImage);
+  $("#install-play").disabled = state.busy || state.coverBusy || !state.loader || state.target?.kind !== "dynamic-launcher" || !appendSelected || !fits;
+  $("#repair-cover").disabled = state.busy || state.coverBusy || !state.loader || state.target?.kind !== "dynamic-launcher" || !state.preparedPlay || !state.preparedCover || !chosen || chosen.state !== "ready";
+  $("#erase-slot").disabled = state.busy || state.coverBusy || !state.loader || state.target?.kind !== "dynamic-launcher" || !chosen || chosen.state !== "ready" || !$("#erase-confirm").checked;
+  $("#finish-play-session").disabled = state.busy || !state.transport;
+  document.querySelectorAll(".slot-card:not(.is-ghost)").forEach((button) => { button.disabled = state.busy || !state.loader; });
+  if (!state.busy && state.loader && document.querySelector(".device-dock").dataset.state === "working") {
+    const label = state.target?.kind === "dynamic-launcher" ? "动态 Launcher 布局"
+      : state.target?.kind === "compatible-launcher" ? "旧版三位置 Launcher"
+        : state.target?.kind === "single-factory" ? "单固件布局" : "未知布局";
+    setDeviceState(`已连接 · ${label}`, "connected");
+  }
 }
 
-function selectMode(mode) {
+function updateUrlState(key, value) {
+  const url = new URL(window.location.href);
+  url.searchParams.set(key, value);
+  history.replaceState(null, "", url);
+}
+
+function selectMode(mode, updateUrl = true) {
   $("#system-panel").hidden = mode !== "system";
   $("#play-panel").hidden = mode !== "play";
-  document.querySelectorAll("[data-mode]").forEach((button) => button.setAttribute("aria-selected", String(button.dataset.mode === mode)));
+  document.querySelectorAll("[data-mode]").forEach((button) => {
+    const selected = button.dataset.mode === mode;
+    button.setAttribute("aria-selected", String(selected));
+    button.tabIndex = selected ? 0 : -1;
+  });
+  if (updateUrl) updateUrlState("mode", mode);
 }
 
-function selectSource(source) {
+function selectSource(source, updateUrl = true) {
   state.sourceKind = source === "play" ? "play-api" : "local";
   state.preparedPlay = null;
   clearCoverPreview();
@@ -918,14 +1105,37 @@ function selectSource(source) {
   updateTitleCheck();
   $("#play-version").value = "";
   $("#play-source-id").value = "";
-  document.querySelectorAll("[data-source]").forEach((button) => button.setAttribute("aria-selected", String(button.dataset.source === source)));
+  document.querySelectorAll("[data-source]").forEach((button) => {
+    const selected = button.dataset.source === source;
+    button.setAttribute("aria-selected", String(selected));
+    button.tabIndex = selected ? 0 : -1;
+  });
   $("#image-info").textContent = "尚未载入固件。";
+  if (updateUrl) updateUrlState("source", source);
   refreshActions();
 }
 
+function enableArrowKeyTabs(selector, activation) {
+  const tabs = [...document.querySelectorAll(selector)];
+  for (const tab of tabs) {
+    tab.addEventListener("keydown", (event) => {
+      const current = tabs.indexOf(tab);
+      let next = null;
+      if (["ArrowRight", "ArrowDown"].includes(event.key)) next = (current + 1) % tabs.length;
+      if (["ArrowLeft", "ArrowUp"].includes(event.key)) next = (current - 1 + tabs.length) % tabs.length;
+      if (event.key === "Home") next = 0;
+      if (event.key === "End") next = tabs.length - 1;
+      if (next === null) return;
+      event.preventDefault();
+      activation(tabs[next]);
+      tabs[next].focus();
+    });
+  }
+}
+
 $("#unsupported").hidden = Boolean(navigator.serial && window.isSecureContext);
-$("#connect").addEventListener("click", () => connect().catch((error) => setResult("#system-result", error.message, "error")));
-$("#disconnect").addEventListener("click", () => disconnect());
+$("#connect").addEventListener("click", () => connect().catch((error) => setResult("#device-message", error.message, "error")));
+$("#disconnect").addEventListener("click", disconnectToApplication);
 $("#install-system").addEventListener("click", installSystem);
 $("#resolve-play").addEventListener("click", resolvePlayUrl);
 $("#play-file").addEventListener("change", prepareLocalFile);
@@ -933,13 +1143,8 @@ $("#cover-file").addEventListener("change", handleCoverFileChange);
 $("#install-play").addEventListener("click", installPlay);
 $("#repair-cover").addEventListener("click", repairMetadataCover);
 $("#erase-slot").addEventListener("click", eraseSelectedSlot);
-$("#retry-cover").addEventListener("click", retryCover);
-$("#finish-without-cover").addEventListener("click", finishWithoutCover);
-$("#install-another").addEventListener("click", () => {
-  hidePlayCompletion();
-  $("#play-url").focus();
-  window.scrollTo({ top: $("#play-panel").offsetTop - 16, behavior: "smooth" });
-});
+$("#install-another").addEventListener("click", prepareAnotherPlay);
+$("#finish-play-session").addEventListener("click", finishPlaySession);
 $("#target-slot").addEventListener("change", updateReplacementWarning);
 $("#replace-confirm").addEventListener("change", refreshActions);
 $("#erase-confirm").addEventListener("change", refreshActions);
@@ -951,12 +1156,17 @@ $("#go-play").addEventListener("click", () => selectMode("play"));
 $("#finish-empty").addEventListener("click", () => setResult("#system-result", "已以空玩法库完成。之后可随时回到此页面安装玩法。", "ok"));
 document.querySelectorAll("[data-mode]").forEach((button) => button.addEventListener("click", () => selectMode(button.dataset.mode)));
 document.querySelectorAll("[data-source]").forEach((button) => button.addEventListener("click", () => selectSource(button.dataset.source)));
+enableArrowKeyTabs("[data-mode]", (button) => selectMode(button.dataset.mode));
+enableArrowKeyTabs("[data-source]", (button) => selectSource(button.dataset.source));
 window.addEventListener("beforeunload", () => {
   if (state.coverPreviewUrl) URL.revokeObjectURL(state.coverPreviewUrl);
   state.transport?.disconnect().catch(() => {});
 });
 
+const initialUrl = new URL(window.location.href);
+const initialMode = initialUrl.searchParams.get("mode");
+const initialSource = initialUrl.searchParams.get("source");
+selectMode(initialMode === "system" ? "system" : "play", false);
+selectSource(initialSource === "local" ? "local" : "play", false);
 renderSlots();
-$("#play-title").value = "";
-updateTitleCheck();
 refreshActions();

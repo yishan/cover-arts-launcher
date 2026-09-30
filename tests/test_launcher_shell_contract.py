@@ -39,6 +39,7 @@ class LauncherShellContractTest(unittest.TestCase):
         cls.boot = read("main/launcher_boot.c")
         cls.ui = read("main/launcher_ui.c")
         cls.cover_view = read("main/launcher_cover_view.c")
+        cls.stats = read("main/launcher_stats.c")
         cls.cmake = read("main/CMakeLists.txt")
 
     def test_shell_uses_bsp_queue_slots_and_boot_adapter(self) -> None:
@@ -118,6 +119,16 @@ class LauncherShellContractTest(unittest.TestCase):
         self.assertIn(
             "lv_obj_set_style_text_line_space(s_message, -8, 0)", secondary
         )
+
+    def test_launch_counts_follow_stable_identity_after_logical_reorder(self) -> None:
+        read_body = function_body(self.stats, "launcher_stats_read")
+        record_body = function_body(self.stats, "launcher_stats_record_launch")
+
+        self.assertIn("find_identity_record", read_body)
+        self.assertIn("store_record_at_slot", read_body)
+        self.assertIn("find_identity_record", record_body)
+        self.assertIn("store_record_at_slot", record_body)
+        self.assertIn("nvs_erase_key", self.stats)
 
 
 if __name__ == "__main__":

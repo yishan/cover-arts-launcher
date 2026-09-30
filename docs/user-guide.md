@@ -21,7 +21,7 @@ play over the installed total, not a set of pre-created empty positions.
 
 The details view shows the play version, first installation time, latest
 installation or update time, and launch count. Older metadata may show no record
-until that play is installed or updated again under v1.3.1.
+until that play is installed or updated again under the dynamic Launcher.
 
 ## Install plays
 
@@ -29,10 +29,14 @@ The hosted Play Manager accepts an official Play detail URL or a local `.bin`.
 Review the detected title, version, source ID, firmware hash, and cover before
 writing. It validates the ESP32-C3 app and checks Chinese title glyph coverage.
 
-v1.3.1 allocates each play from its verified app length plus its sidecar and
-appends plays in installation order while enough contiguous space remains. The
+v1.5.0 allocates each play from its verified app length plus its sidecar. It
+first reuses the smallest released range that fits, then uses tail space. The
 absolute maximum is 16 OTA play entries, but available Flash normally limits the
 real count first.
+
+Install several plays without selecting the serial port again. After each play,
+choose to continue; the manager refreshes its download session while preserving
+the browser permission. Finish the session when ready to restart the device once.
 
 After installation, distinguish two states:
 
@@ -41,11 +45,15 @@ After installation, distinguish two states:
 
 Only the second state is on-device confirmation.
 
-## Current deletion behavior
+## Remove a play
 
-The first dynamic-storage release is append-only. Removing the final installed
-play reclaims its tail space. Arbitrary middle deletion and automatic physical
-compaction are not included in v1.3.1.
+Select any installed play in the maintenance section, review its name and
+identity, then confirm removal. Remaining covers close the logical gap without
+copying their application bytes. A later install can reuse the released range.
+
+If total free space is sufficient but split into ranges that are all too small,
+the manager stops before erasing and reports that no contiguous range fits.
+Automatic physical compaction is not included in v1.5.0.
 
 ## Generic plays and optional return support
 

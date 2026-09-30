@@ -4,6 +4,22 @@
 
 # Changelog
 
+## v1.5.0 — 2026-10-01
+
+- Added arbitrary play deletion with transactional logical reordering; retained
+  application bytes stay at their physical Flash offsets.
+- Added smallest-fitting-hole reuse for later installs and clear rejection when
+  free space is too fragmented for one contiguous allocation.
+- Preserved launch counts across logical position changes by migrating records
+  using the play's stable Source ID or firmware identity.
+- Added consecutive installation in one browser permission session, with an
+  automatic download-session refresh between plays and one final device restart.
+- Improved Web Serial reliability with serialized transport access, a stable
+  transfer rate, readback verification, and recovery guidance that distinguishes
+  pre-commit failures from an already-committed directory.
+- Kept the v1.3.1 dynamic-storage format and generic-play compatibility; automatic
+  physical compaction remains out of scope.
+
 ## v1.3.1 — 2026-09-29
 
 - Replaced the fixed three-position layout with dynamic play storage allocated

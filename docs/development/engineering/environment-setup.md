@@ -428,7 +428,7 @@ not installed. The firmware gate is the preferred build path. It uses an
 isolated temporary build and produces the verified `0x0` image at:
 
 ```text
-build/FoloToy-AI-Passport-Cover-Arts-Launcher-v1.3.1-full.bin
+build/FoloToy-AI-Passport-Cover-Arts-Launcher-v1.5.0-full.bin
 ```
 
 For build-only agents with Docker already authorized, the official Espressif
@@ -473,7 +473,7 @@ Prefer flashing the verified merged image from offset `0x0`:
 
 ```bash
 python -m esptool --chip esp32c3 -p <port> -b 460800 \
-    write-flash 0x0 build/FoloToy-AI-Passport-Cover-Arts-Launcher-v1.3.1-full.bin
+    write-flash 0x0 build/FoloToy-AI-Passport-Cover-Arts-Launcher-v1.5.0-full.bin
 idf.py -p <port> monitor
 ```
 

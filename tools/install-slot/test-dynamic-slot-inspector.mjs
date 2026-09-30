@@ -3,8 +3,10 @@ import test from "node:test";
 
 import { COVER_PAYLOAD_LENGTH } from "./cover-convert.js";
 import {
+  appendDynamicSlot,
   dynamicPartitionEntries,
   planDynamicLibrary,
+  removeDynamicSlot,
 } from "./dynamic-layout.js";
 import {
   dynamicSidecarLayout,
@@ -113,4 +115,25 @@ test("an empty dynamic table is a valid empty library", async () => {
   assert.equal(inventory.slotCount, 0);
   assert.deepEqual(inventory.slots, []);
   assert.ok(inventory.largestInstallableImage > 0x600000);
+});
+
+test("inventory follows logical ids when a new play reuses an earlier physical hole", async () => {
+  const loader = new FlashLoader();
+  const initial = planDynamicLibrary([0x40000, 0x90000, 0x50000]);
+  const removed = removeDynamicSlot(initial.slots, 0);
+  const reused = appendDynamicSlot(removed.slots, 0x20000);
+  loader.flash.set(encodePartitionTable(dynamicPartitionEntries(reused.slots)), 0x8000);
+  reused.slots.forEach((slot, index) => installFixture(loader, slot, {
+    generation: index + 1,
+    title: `逻辑玩法${index + 1}`,
+  }));
+
+  const inventory = await inspectDynamicLibraryFast(loader);
+  assert.deepEqual(inventory.slots.map(({ slotId, offset, title }) => ({ slotId, offset, title })),
+    reused.slots.map(({ slotId, offset }, index) => ({
+      slotId,
+      offset,
+      title: `逻辑玩法${index + 1}`,
+    })));
+  assert.ok(inventory.slots[2].offset < inventory.slots[0].offset);
 });

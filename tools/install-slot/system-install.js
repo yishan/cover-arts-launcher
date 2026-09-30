@@ -1,4 +1,5 @@
 import { parsePartitionTable } from "./extract-app-image.js";
+import { dynamicPartitionEntries, parseDynamicPartitionEntries } from "./dynamic-layout.js";
 
 export const COMPATIBLE_PARTITIONS = [
   { name: "nvs", type: 1, subtype: 2, offset: 0x9000, size: 0x6000 },
@@ -11,6 +12,8 @@ export const COMPATIBLE_PARTITIONS = [
   { name: "otadata", type: 1, subtype: 0, offset: 0x7fe000, size: 0x2000 },
 ];
 
+export const DYNAMIC_EMPTY_PARTITIONS = dynamicPartitionEntries([]);
+
 const LEGACY_PARTITIONS = [
   { name: "nvs", type: 1, subtype: 2, offset: 0x9000, size: 0x6000 },
   { name: "phy_init", type: 1, subtype: 1, offset: 0xf000, size: 0x1000 },
@@ -18,18 +21,7 @@ const LEGACY_PARTITIONS = [
 ];
 
 export const SYSTEM_ERASE_RANGES = [
-  { name: "ota_0", address: 0x180000, size: 0x200000 },
-  { name: "ota_1", address: 0x380000, size: 0x200000 },
-  { name: "ota_2", address: 0x580000, size: 0x200000 },
-  { name: "cover_0a", address: 0x780000, size: 0x10000 },
-  { name: "cover_0b", address: 0x790000, size: 0x10000 },
-  { name: "cover_1a", address: 0x7a0000, size: 0x10000 },
-  { name: "cover_1b", address: 0x7b0000, size: 0x10000 },
-  { name: "cover_2a", address: 0x7c0000, size: 0x10000 },
-  { name: "cover_2b", address: 0x7d0000, size: 0x10000 },
-  { name: "trust_0", address: 0x7e0000, size: 0x2000 },
-  { name: "trust_1", address: 0x7e2000, size: 0x2000 },
-  { name: "trust_2", address: 0x7e4000, size: 0x2000 },
+  { name: "dynamic_play_arena", address: 0x180000, size: 0x670000 },
   { name: "otadata", address: 0x7fe000, size: 0x2000 },
 ];
 
@@ -49,6 +41,12 @@ export function classifySystemTarget({ chip, flashSize, partitionTableSector }) 
     if (!table.md5Present || !table.md5Valid) return { kind: "unknown", canInstall: false };
     if (sameTable(table.entries, LEGACY_PARTITIONS)) return { kind: "single-factory", canInstall: true, partitions: table.entries };
     if (sameTable(table.entries, COMPATIBLE_PARTITIONS)) return { kind: "compatible-launcher", canInstall: true, partitions: table.entries };
+    try {
+      const library = parseDynamicPartitionEntries(table.entries);
+      return { kind: "dynamic-launcher", canInstall: true, partitions: table.entries, library };
+    } catch {
+      // Not a v0.3 dynamic Launcher table.
+    }
   } catch {
     // Fall through to a fail-closed result.
   }
@@ -98,7 +96,7 @@ export function reduceSystemInstall(session, event) {
       return session.phase === "verifying-segments" ? { ...session, phase: "verifying-empty-state" } : session;
     case "empty-state-verified":
       if (session.phase !== "verifying-empty-state") return session;
-      if (event.otaSelected || event.emptySlots !== 3) return recovery(session, "Installed system did not finish with three empty slots and no selected OTA app.");
+      if (event.otaSelected || event.playCount !== 0) return recovery(session, "Installed system did not finish with an empty dynamic library and no selected OTA app.");
       return {
         ...session, phase: "completed", completed: true,
         completionActions: ["install-first-play", "finish-empty-library"],
@@ -110,26 +108,5 @@ export function reduceSystemInstall(session, event) {
       return recovery(session, event.error ?? "System installation failed.");
     default:
       return session;
-  }
-}
-
-export async function runSystemInstall({ targetKind, erase, write, verifySegments, verifyEmptyState }) {
-  let session = createSystemInstallSession(targetKind);
-  session = reduceSystemInstall(session, { type: "confirm-warning" });
-  try {
-    await erase();
-    session = reduceSystemInstall(session, { type: "erase-complete" });
-    await write();
-    session = reduceSystemInstall(session, { type: "write-complete" });
-    await verifySegments();
-    session = reduceSystemInstall(session, { type: "segments-verified" });
-    const emptyState = await verifyEmptyState();
-    session = reduceSystemInstall(session, { type: "empty-state-verified", ...emptyState });
-    if (session.phase !== "completed") throw new Error(session.error ?? "System installation verification failed.");
-    return { session, error: null };
-  } catch (error) {
-    const eventType = session.phase.startsWith("verifying") ? "verification-failed" : "write-failed";
-    session = reduceSystemInstall(session, { type: eventType, error: error.message });
-    return { session, error };
   }
 }

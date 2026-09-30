@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { COVER_PAYLOAD_LENGTH, crc32 } from "./cover-convert.js";
-import { selectValidCoverBank } from "./cover-bank.js";
+import { selectLatestReadableCoverBank, selectValidCoverBank } from "./cover-bank.js";
 
 const appSha = new Uint8Array(32).fill(0x42);
 const payload = new Uint8Array(COVER_PAYLOAD_LENGTH).fill(0x19);
@@ -50,4 +50,27 @@ test("returns null when no cover belongs to the installed app", () => {
     appSha256: appSha,
     banks: [{ bank: "a", manifest: manifest(1, { slotId: 0 }), payload }],
   }), null);
+});
+
+test("selects the newest readable bank when restoring slot cover art", () => {
+  const selected = selectLatestReadableCoverBank({
+    slotId: 1,
+    banks: [
+      { bank: "a", manifest: manifest(10), payload },
+      { bank: "b", manifest: manifest(11), payload },
+    ],
+  });
+  assert.equal(selected.bank, "b");
+  assert.equal(selected.manifest.title, "Play 11");
+});
+
+test("falls back to the older readable bank when the newest payload is corrupt", () => {
+  const selected = selectLatestReadableCoverBank({
+    slotId: 1,
+    banks: [
+      { bank: "a", manifest: manifest(12), payload },
+      { bank: "b", manifest: manifest(13), payload: new Uint8Array(payload.length) },
+    ],
+  });
+  assert.equal(selected.bank, "a");
 });

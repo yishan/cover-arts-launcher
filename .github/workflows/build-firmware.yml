@@ -89,7 +89,7 @@ jobs:
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           name: "Cover Arts Launcher ${{ github.ref_name }}"
-          body_path: docs/releases/v1.3.1.md
+          body_path: docs/releases/${{ github.ref_name }}.md
           files: |
             release/${{ needs.build.outputs.firmware_file }}
             release/${{ needs.build.outputs.firmware_zip }}

@@ -29,7 +29,7 @@ description: 验证并打包 FoloToy AI Passport 固件，交付已校验的合�
 ## 确定准确的交付产物
 
 门禁保留带项目名和版本号的完整镜像（当前为
-`build/FoloToy-AI-Passport-Cover-Arts-Launcher-v1.3.1-full.bin`），以及按内容哈希归档的
+`build/FoloToy-AI-Passport-Cover-Arts-Launcher-v1.5.0-full.bin`），以及按内容哈希归档的
 `build/firmware/<full-bin-sha256>/`。交接前运行：
 
 ```text

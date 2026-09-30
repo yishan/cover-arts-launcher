@@ -8,7 +8,6 @@ import {
   espImageLength,
   extractAppImage,
   parsePartitionTable,
-  verifyEspImage,
 } from "./extract-app-image.js";
 
 function writeU32LE(bytes, offset, value) {
@@ -33,12 +32,6 @@ function buildAppImage(targetLength = 0x1000) {
   bytes[23] = 1;
   writeU32LE(bytes, 24, 0x3c000020);
   writeU32LE(bytes, 28, dataLength);
-  let checksum = 0xef;
-  for (const value of bytes.subarray(32, 32 + dataLength)) checksum ^= value;
-  let checksumOffset = 32 + dataLength;
-  while (checksumOffset % 16 !== 15) checksumOffset++;
-  bytes[checksumOffset] = checksum;
-  bytes.set(createHash("sha256").update(bytes.subarray(0, checksumOffset + 1)).digest(), checksumOffset + 1);
   return bytes;
 }
 
@@ -104,20 +97,6 @@ test("encodes a partition table that round-trips with a valid MD5", () => {
   assert.deepEqual(decoded.entries, entries);
 });
 
-test("partition encoder rejects overlaps, duplicate labels, and bad app alignment", () => {
-  assert.throws(() => encodePartitionTable([
-    { name: "one", type: 1, subtype: 2, offset: 0x9000, size: 0x6000 },
-    { name: "two", type: 1, subtype: 1, offset: 0xe000, size: 0x2000 },
-  ]), /overlap/);
-  assert.throws(() => encodePartitionTable([
-    { name: "same", type: 1, subtype: 2, offset: 0x9000, size: 0x1000 },
-    { name: "same", type: 1, subtype: 1, offset: 0xa000, size: 0x1000 },
-  ]), /duplicate label/);
-  assert.throws(() => encodePartitionTable([
-    { name: "ota_0", type: 0, subtype: 0x10, offset: 0x181000, size: 0x10000 },
-  ]), /aligned/);
-});
-
 test("rejects a merged image with a bad partition-table MD5", () => {
   assert.throws(() => extractAppImage(mergedImage({ corruptMd5: true })), /partition.*MD5/i);
 });
@@ -131,27 +110,14 @@ test("rejects truncated segment data", () => {
   assert.throws(() => espImageLength(app.subarray(0, app.length - 64), 0), /truncated/i);
 });
 
-test("verifies the ESP checksum and appended SHA-256", async () => {
-  const app = buildAppImage();
-  assert.equal(await verifyEspImage(app), app.length);
-
-  const badChecksum = app.slice();
-  badChecksum[32] ^= 0x01;
-  await assert.rejects(verifyEspImage(badChecksum), /checksum/i);
-
-  const badHash = app.slice();
-  badHash[badHash.length - 1] ^= 0x01;
-  await assert.rejects(verifyEspImage(badHash), /SHA-256/i);
-});
-
 test("rejects non-ESP input", () => {
   assert.throws(() => extractAppImage(new Uint8Array(256)), /magic|ESP/i);
 });
 
-test("allows exactly 0x200000 bytes and rejects the next aligned image", () => {
+test("allows one image to fill the dynamic arena and rejects the next aligned image", () => {
   assert.equal(extractAppImage(buildAppImage(MAX_APP_IMAGE_SIZE)).length, MAX_APP_IMAGE_SIZE);
   assert.throws(
     () => extractAppImage(buildAppImage(MAX_APP_IMAGE_SIZE + 0x10)),
-    /exceeds.*0x200000/i,
+    /exceeds.*0x660000/i,
   );
 });

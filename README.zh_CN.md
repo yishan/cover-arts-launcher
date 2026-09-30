@@ -8,7 +8,7 @@ Cover Arts Launcher 可以把 FoloToy AI Passport 变成以封面为主的玩法
 实际已安装的玩法，用户可浏览封面、启动玩法，并在重启或重新上电后回到玩法库。
 
 本仓库包含 Launcher 固件、浏览器端管理工具、Host tests、构建工具和供创作者选择接入的
-兼容 Skill。当前公开版本为 **v1.3.1**。
+兼容 Skill。当前公开版本为 **v1.5.0**。
 
 ## 它能做什么
 
@@ -18,25 +18,27 @@ Cover Arts Launcher 可以把 FoloToy AI Passport 变成以封面为主的玩法
 - 详情页显示版本、首次安装时间、最近安装／更新时间和启动次数。
 - 支持中文玩法名称，并在安装前检查 Launcher 字形覆盖。
 - 通用兼容玩法无需 Launcher SDK，也无需修改源码即可安装和启动。
+- 支持删除任意已安装玩法、立即补齐逻辑位置，并让后续玩法复用释放的空间。
+- 同一次浏览器串口授权可连续安装多个玩法，完成玩法库管理后再统一重启设备。
 - 重启或重新上电后返回 Launcher，不会删除已安装玩法。
 - 创作者可选择在玩法已有封面页接入长按 `Up` 返回；该操作不会占用游戏过程中的按键。
 
-## 安装 v1.3.1
+## 安装 v1.5.0
 
 推荐使用线上[玩法管理器](https://calm.yishan.app/)。请使用桌面版 Chrome 或 Edge，
 通过支持数据传输的 USB 线连接 AI Passport，然后选择完整安装 Launcher。
 
-从 [v1.3.1 Release](https://github.com/yishan/cover-arts-launcher/releases/tag/v1.3.1)
+从 [v1.5.0 Release](https://github.com/yishan/cover-arts-launcher/releases/tag/v1.5.0)
 下载：
 
-- `FoloToy-AI-Passport-Cover-Arts-Launcher-v1.3.1-full.bin`：从 `0x0` 写入的完整
+- `FoloToy-AI-Passport-Cover-Arts-Launcher-v1.5.0-full.bin`：从 `0x0` 写入的完整
   8 MiB 固件。
-- `FoloToy-AI-Passport-Cover-Arts-Launcher-v1.3.1-full.bin.zip`：同一固件的压缩包；
+- `FoloToy-AI-Passport-Cover-Arts-Launcher-v1.5.0-full.bin.zip`：同一固件的压缩包；
   选择写入前先解压。
 - `SHA256SUMS.txt`：发布时生成的完整性校验值。
 - `THIRD_PARTY_NOTICES.md`：来源和许可证致谢。
 
-首次完整安装 v1.3.1 会替换旧版 Flash 布局，并清除旧 Launcher 下安装的玩法。
+从 v1.3.1 之前的固定位置 Launcher 首次完整安装时，会替换旧版 Flash 布局并清除旧玩法。
 迁移完成后需要重新添加玩法。开始前请阅读[安装指南](docs/installation.zh_CN.md)。
 
 ## 使用玩法库
@@ -44,8 +46,8 @@ Cover Arts Launcher 可以把 FoloToy AI Passport 变成以封面为主的玩法
 1. 打开[玩法管理器](https://calm.yishan.app/)并连接设备。
 2. 导入官方 Play URL，或选择本地兼容的 `.bin` 文件。
 3. 核对识别到的标题、版本、Source ID、固件哈希和封面。
-4. 安装玩法；v1.3.1 会按安装顺序追加，直到剩余连续空间不足。
-5. 完成本次安装并重启设备，在真机上确认新封面和启动行为。
+4. 连续安装一个或多个玩法；v1.5.0 按逻辑顺序追加，并优先复用能够容纳玩法的最小释放空间。
+5. 完成本次会话后统一重启设备，在真机上确认新封面和启动行为。
 
 详情页、故障恢复及通用玩法行为见[用户指南](docs/user-guide.zh_CN.md)。
 

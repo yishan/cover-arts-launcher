@@ -4,96 +4,74 @@
 
 # Firmware Layout
 
-This Launcher branch targets the ESP32-C3 with 8 MB Flash. Its partition
-contract reserves one factory Launcher, three fixed application positions,
-sidecar Cover Art storage, and standard ESP-IDF OTA selection data.
+This Launcher targets the ESP32-C3 with 8 MB Flash. The complete-system image
+starts with an empty dynamic library. The browser Play Manager adds OTA entries
+to the partition table according to each verified application's actual size.
 
-## Launcher layout
-
-The partition table contains exactly:
+## Empty Launcher layout
 
 | Partition | Type/subtype | Offset | Size | Purpose |
 | --- | --- | ---: | ---: | --- |
 | `nvs` | data/NVS | `0x9000` | `0x6000` | Launcher and application key-value namespaces |
 | `phy_init` | data/PHY | `0xF000` | `0x1000` | PHY initialization data |
 | `factory` | app/factory | `0x10000` | `0x170000` | Launcher, maximum 1,507,328 bytes |
-| `ota_0` | app/OTA 0 | `0x180000` | `0x200000` | Application position 1 |
-| `ota_1` | app/OTA 1 | `0x380000` | `0x200000` | Application position 2 |
-| `ota_2` | app/OTA 2 | `0x580000` | `0x200000` | Application position 3 |
-| `covers` | data/custom `0x40` | `0x780000` | `0x7E000` | A/B Cover Art records and manifests |
 | `otadata` | data/OTA | `0x7FE000` | `0x2000` | Standard ESP-IDF boot selection |
 
-The final partition ends exactly at `0x800000`. Every application position is
-exactly 2 MiB; an application image larger than `0x200000` is rejected. Cover
-data is stored only in `covers` and is never appended to an application image.
+The dynamic play arena is `0x180000..0x7F0000`. Each installed play becomes a
+contiguously numbered `ota_0..ota_15` entry, but its physical offset does not
+have to match its logical order after deletion. Its allocation is the verified
+application length rounded up to 64 KiB, plus one 64 KiB DPS1 sidecar at the
+partition tail. The sidecar stores double-bank identity metadata and the cover
+payload. Allocations must not overlap or extend beyond the arena.
+
+Removing a play rewrites later logical identities without copying retained
+application bytes. A later installation uses the smallest released range that
+fits before consuming tail space. Fragmented free bytes are not physically
+compacted in v1.5.0.
 
 ## Image types
 
 - A **complete-system merged image** starts at `0x0` and contains the
-  bootloader, partition table, and factory Launcher. It is for first-time
-  migration or intentional complete refresh only.
+  bootloader, empty dynamic partition table, and factory Launcher. It is for
+  first-time migration or an intentional complete refresh.
 - An **app-only image** starts with an ESP application image and is written to
-  exactly one selected `ota_*` position after validation. It must never be
+  a newly allocated dynamic `ota_*` entry after validation. It must never be
   flashed at `0x0`.
-- A compatible merged application image may be accepted by the browser
-  installer only after its partition table and embedded application are
-  validated and the application image has been extracted. Normal position
-  replacement does not rewrite the bootloader, partition table, NVS, PHY,
-  Launcher, or unrelated positions.
+- A compatible merged play image may be accepted only after its partition table
+  and embedded application are validated and the application image is
+  extracted. Normal play installation does not rewrite the bootloader, NVS,
+  PHY, factory Launcher, or unrelated play allocations.
 
-The complete-system merged artifact may be sparse and therefore does not prove
-that unwritten application or cover ranges are erased. A first-time installer
-must explicitly erase and verify `ota_0`, `ota_1`, `ota_2`, all six cover banks,
-and `otadata` before it reports an all-empty library.
+The complete-system image can be sparse and does not prove that the dynamic
+play arena is empty. A first-time installation must explicitly erase and verify
+`0x180000..0x7F0000` and `otadata` before reporting an empty library.
 
 ## Enforced validation
 
-Run:
+Run `./tools/validate.sh --firmware`. The gate builds in an isolated directory,
+creates the merged image, validates the offsets from `flash_args`, checks the
+partition-table MD5, partition bounds, non-overlap, and factory application
+fit. Host tests additionally cover the empty dynamic table, 64 KiB allocation
+rules, the 16-entry limit, logical reordering, smallest-fitting-hole reuse, and
+the 8 MB boundary. CI runs the same gate.
 
-```bash
-./tools/validate.sh --firmware
-```
-
-The check builds in an isolated directory, creates the merged image, reads the
-configured image offsets from `flash_args`, validates the partition-table MD5,
-partition bounds, unique labels, and non-overlap, then ensures the factory
-Launcher starts in and fits its configured partition. Host tests additionally
-pin every Launcher label, subtype, offset, size, the three equal 2 MiB
-positions, and the exact 8 MB end. CI runs the same gate.
-
-Publish the complete-system artifact and child application artifacts as
-different products with separate labels and hashes. The similarly named
-`build/FoloToy-AI-Passport.bin` is the factory Launcher app-only image; it does
-not contain the bootloader or partition table and is not a child play image.
+Publish the complete-system artifact and child play images as different
+products. `build/FoloToy-AI-Passport.bin` is the factory Launcher app-only image;
+it is not a complete-system image or a child play image.
 
 ## Flashing and stored data
 
-> **No backup of the firmware already installed on the device is required
-> before downloading (flashing) new firmware.** Do not make reading out the
-> original firmware or saving a full-Flash dump a prerequisite for this
-> workflow. The new firmware replaces the original firmware; this workflow
-> does not retain an automatic rollback copy or promise that the original
-> firmware can be restored.
+No backup of the firmware already installed on the device is required before
+flashing new firmware. This does not preserve user data or authorize a
+full-chip erase. Export settings, records, or other data that must be kept.
 
-Firmware and user data are different. If existing NVS settings, application
-records, or files must be kept, export or otherwise save them before flashing
-using a method supported by that application. Not requiring an original-firmware
-backup does not guarantee data preservation or authorize a full-chip erase.
+Changing from an older fixed or single-factory layout rewrites the partition
+table and changes the meaning of Flash addresses. The verified merged image is
+written from `0x0`; because it pads gaps between included images, it can reset
+NVS or PHY data while leaving bytes in the dynamic arena untouched. Use the
+reviewed complete-installation flow for migration so it erases and verifies the
+arena and `otadata`.
 
-Changing from the former single-factory layout rewrites the partition table and
-can make every previously stored address mean something different. Before a
-device migration, read and archive the small existing partition-table sector,
-review product-identity storage, and do not assume an unknown data region is
-disposable. This diagnostic record is not a requirement to back up the full
-firmware. The `meta-pass` project's `cardid` address is not part of this
-contract.
-
-The verified merged image is written from `0x0`. Because it pads gaps between
-included images, flashing it can reset NVS or PHY regions but may leave stale
-bytes beyond its final segment. Use the reviewed first-time installer for a
-three-empty-position migration. During normal development, use segmented
-`idf.py flash` when existing state should be preserved; this also requires a
-compatible partition layout and flash targets that do not overwrite those data
-regions. `idf.py erase-flash` erases all user data. Do not add it as a routine
-prerequisite: use it only when a complete erase is explicitly intended and any
-data that must be kept has been saved.
+During normal development, segmented `idf.py flash` may preserve compatible NVS
+state, but only when the current partition layout and targets are understood.
+`idf.py erase-flash` erases all user data and is not a routine prerequisite.

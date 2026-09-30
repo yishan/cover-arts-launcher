@@ -5,6 +5,7 @@ import {
   COVER_HEIGHT,
   COVER_PAYLOAD_LENGTH,
   COVER_WIDTH,
+  coverRgb565ToRgba,
   crc32,
   decodeCoverManifest,
   encodeCoverManifest,
@@ -23,6 +24,20 @@ test("transparent source pixels composite onto black", () => {
   const rgba = Uint8ClampedArray.from([255, 255, 255, 0]);
   const result = rgbaToCoverRgb565({ data: rgba, width: 1, height: 1 });
   assert.deepEqual([...result.data.subarray(0, 2)], [0x00, 0x00]);
+});
+
+test("decodes stored RGB565 cover pixels for browser display", () => {
+  const payload = new Uint8Array(COVER_PAYLOAD_LENGTH);
+  payload.set([0x00, 0xf8, 0xe0, 0x07, 0x1f, 0x00]);
+  const result = coverRgb565ToRgba(payload);
+  assert.equal(result.width, COVER_WIDTH);
+  assert.equal(result.height, COVER_HEIGHT);
+  assert.deepEqual([...result.data.subarray(0, 12)], [
+    255, 0, 0, 255,
+    0, 255, 0, 255,
+    0, 0, 255, 255,
+  ]);
+  assert.throws(() => coverRgb565ToRgba(new Uint8Array(2)), /length/i);
 });
 
 test("rejects malformed source image data", () => {

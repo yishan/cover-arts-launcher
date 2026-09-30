@@ -6,7 +6,9 @@
  * 994caaf52357d97323bffb82b2db9cc784afb1eb. See LICENSE.meta-pass.txt.
  */
 
-export const MAX_APP_IMAGE_SIZE = 0x200000;
+// The dynamic library can devote the complete play arena to one image, minus
+// its mandatory 64 KiB DPS1 sidecar.
+export const MAX_APP_IMAGE_SIZE = 0x660000;
 export const ESP_IMAGE_MAGIC = 0xe9;
 export const ESP32C3_CHIP_ID = 5;
 const ESP_IMAGE_CHECKSUM_INITIAL = 0xef;
@@ -273,7 +275,9 @@ export async function verifyEspImage(input, start = 0) {
     try {
       let checksum = ESP_IMAGE_CHECKSUM_INITIAL;
       for (const segment of layout.segments) {
-        for (const value of bytes.subarray(segment.dataOffset, segment.dataOffset + segment.dataLength)) checksum ^= value;
+        for (const value of bytes.subarray(segment.dataOffset, segment.dataOffset + segment.dataLength)) {
+          checksum ^= value;
+        }
       }
       if (bytes[layout.checksumOffset] !== checksum) {
         throw imageError(`ESP image checksum mismatch: calculated 0x${checksum.toString(16).padStart(2, "0")}, read 0x${bytes[layout.checksumOffset].toString(16).padStart(2, "0")}.`);
@@ -311,7 +315,7 @@ export function extractAppImage(input) {
 
   const length = espImageLength(bytes, appOffset);
   if (length > MAX_APP_IMAGE_SIZE) {
-    throw new Error(`App image length ${length} exceeds slot capacity 0x200000.`);
+    throw new Error(`App image length ${length} exceeds dynamic arena capacity 0x${MAX_APP_IMAGE_SIZE.toString(16)}.`);
   }
   return { kind, appOffset, length, data: bytes.slice(appOffset, appOffset + length) };
 }

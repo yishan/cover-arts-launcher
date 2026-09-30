@@ -34,7 +34,7 @@ from that checkout; never infer a developer-specific IDF path.
 ## Identify the exact deliverable
 
 The gate preserves the project-versioned full image (currently
-`build/FoloToy-AI-Passport-Cover-Arts-Launcher-v1.3.1-full.bin`) and a content-addressed
+`build/FoloToy-AI-Passport-Cover-Arts-Launcher-v1.5.0-full.bin`) and a content-addressed
 bundle under `build/firmware/<full-bin-sha256>/`. Verify the bundle before
 handoff with:
 

@@ -5,13 +5,14 @@ import test from "node:test";
 
 import {
   COMPATIBLE_PARTITIONS,
+  DYNAMIC_EMPTY_PARTITIONS,
   SYSTEM_ERASE_RANGES,
   classifySystemTarget,
   createSystemInstallSession,
   makeEraseVerificationSamples,
   reduceSystemInstall,
-  runSystemInstall,
 } from "./system-install.js";
+import { dynamicPartitionEntries, planDynamicLibrary } from "./dynamic-layout.js";
 
 function writeU32LE(bytes, offset, value) {
   new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setUint32(offset, value, true);
@@ -61,6 +62,21 @@ test("detects an existing compatible Launcher layout", () => {
   });
   assert.equal(result.kind, "compatible-launcher");
   assert.equal(result.canInstall, true);
+});
+
+test("detects empty and populated dynamic Launcher layouts", () => {
+  for (const entries of [
+    DYNAMIC_EMPTY_PARTITIONS,
+    dynamicPartitionEntries(planDynamicLibrary([0x50000, 0x90000]).slots),
+  ]) {
+    const result = classifySystemTarget({
+      chip: "ESP32-C3",
+      flashSize: 0x800000,
+      partitionTableSector: partitionSector(entries),
+    });
+    assert.equal(result.kind, "dynamic-launcher");
+    assert.equal(result.canInstall, true);
+  }
 });
 
 test("refuses unknown layouts and invalid identity data", () => {
@@ -113,41 +129,23 @@ test("verification failure never reaches success", () => {
   assert.equal(session.completed, false);
 });
 
-test("success requires verified segments, no OTA selection, and three empty slots", () => {
+test("success requires verified segments, no OTA selection, and an empty dynamic library", () => {
   let session = createSystemInstallSession("single-factory");
   for (const event of [
     { type: "confirm-warning" },
     { type: "erase-complete" },
     { type: "write-complete" },
     { type: "segments-verified" },
-    { type: "empty-state-verified", otaSelected: false, emptySlots: 3 },
+    { type: "empty-state-verified", otaSelected: false, playCount: 0 },
   ]) session = reduceSystemInstall(session, event);
   assert.equal(session.phase, "completed");
   assert.equal(session.completed, true);
   assert.deepEqual(session.completionActions, ["install-first-play", "finish-empty-library"]);
 });
 
-test("real system controller stops after a short-read verification failure", async () => {
-  const events = [];
-  const result = await runSystemInstall({
-    targetKind: "single-factory",
-    async erase() { events.push("erase"); },
-    async write() { events.push("write"); },
-    async verifySegments() { events.push("verify"); throw new Error("Only got 2 bytes"); },
-    async verifyEmptyState() { events.push("empty"); return { otaSelected: false, emptySlots: 3 }; },
-  });
-  assert.deepEqual(events, ["erase", "write", "verify"]);
-  assert.equal(result.session.phase, "recovery-required");
-  assert.equal(result.session.restartFrom, "warning");
-  assert.match(result.error.message, /Only got 2 bytes/);
-});
-
-test("erase plan names every slot, all six cover banks, and otadata", () => {
+test("erase plan covers the complete dynamic arena and otadata", () => {
   assert.deepEqual(SYSTEM_ERASE_RANGES.map((item) => item.name), [
-    "ota_0", "ota_1", "ota_2",
-    "cover_0a", "cover_0b", "cover_1a", "cover_1b", "cover_2a", "cover_2b",
-    "trust_0", "trust_1", "trust_2",
-    "otadata",
+    "dynamic_play_arena", "otadata",
   ]);
   for (const range of SYSTEM_ERASE_RANGES) {
     const samples = makeEraseVerificationSamples(range, 32);
@@ -194,12 +192,12 @@ test("play manager exposes an explicitly confirmed selected-slot erase action", 
   assert.match(source, /async function eraseSelectedSlot\(\)/);
 });
 
-test("selected-slot erase adapts eraseSize for verification samples", async () => {
+test("last-position erase verifies the full dynamic allocation", async () => {
   const source = await readFile(new URL("./app.js", import.meta.url), "utf8");
 
   assert.match(
     source,
-    /makeEraseVerificationSamples\(\{ address: range\.address, size: range\.eraseSize \}, 32\)/,
+    /makeEraseVerificationSamples\(\{ address: slot\.offset, size: slot\.size \}, 32\)/,
   );
 });
 

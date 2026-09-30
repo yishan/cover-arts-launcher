@@ -10,7 +10,7 @@ return to the library after a restart or power cycle.
 
 This repository contains the launcher firmware, browser-side management tools,
 host tests, build tooling, and the optional creator integration skill. The
-current public release is **v1.3.1**.
+current public release is **v1.5.0**.
 
 ## What it does
 
@@ -24,28 +24,32 @@ current public release is **v1.3.1**.
 - Supports Chinese play titles with pre-install glyph checks.
 - Installs generic compatible plays without requiring a Launcher SDK or source
   change.
+- Removes any installed play, closes its logical gap immediately, and reuses
+  the released range for a later compatible play.
+- Installs several plays in one browser permission session, then restarts the
+  device once when library management is complete.
 - Returns to the Launcher after a restart or power cycle without deleting the
   installed plays.
 - Optionally lets an adapted play return from its existing cover page by holding
   `Up`; the shortcut is intentionally not reserved during gameplay.
 
-## Install v1.3.1
+## Install v1.5.0
 
 The recommended path is the hosted [Play Manager](https://calm.yishan.app/).
 Use desktop Chrome or Edge, connect the AI Passport with a data-capable USB
 cable, and select the complete Launcher installation flow.
 
 Download these files from the
-[v1.3.1 release](https://github.com/yishan/cover-arts-launcher/releases/tag/v1.3.1):
+[v1.5.0 release](https://github.com/yishan/cover-arts-launcher/releases/tag/v1.5.0):
 
-- `FoloToy-AI-Passport-Cover-Arts-Launcher-v1.3.1-full.bin` — complete 8 MiB
+- `FoloToy-AI-Passport-Cover-Arts-Launcher-v1.5.0-full.bin` — complete 8 MiB
   image for writing at address `0x0`.
-- `FoloToy-AI-Passport-Cover-Arts-Launcher-v1.3.1-full.bin.zip` — compressed copy
+- `FoloToy-AI-Passport-Cover-Arts-Launcher-v1.5.0-full.bin.zip` — compressed copy
   of the same image; unzip it before selecting it in the manager.
 - `SHA256SUMS.txt` — published integrity values.
 - `THIRD_PARTY_NOTICES.md` — source and license acknowledgements.
 
-The first complete installation of v1.3.1 replaces the previous Flash layout
+The first complete installation from a pre-v1.3.1 fixed-position Launcher replaces the previous Flash layout
 and clears plays installed under an older Launcher. Prepare to add those plays
 again after migration. Read the [installation guide](docs/installation.md)
 before proceeding.
@@ -55,9 +59,9 @@ before proceeding.
 1. Open the [Play Manager](https://calm.yishan.app/) and connect the device.
 2. Import an official Play URL or select a local compatible `.bin` file.
 3. Review the detected title, version, source ID, firmware hash, and cover.
-4. Install the play. v1.3.1 appends verified plays in installation order while
-   enough contiguous Flash space remains.
-5. Finish the session and restart the device, then confirm the new cover and
+4. Install one or more plays. v1.5.0 appends them in logical order and first
+   reuses the smallest released range that fits.
+5. Finish the session to restart the device once, then confirm the new cover and
    launch behavior on the device.
 
 See the [user guide](docs/user-guide.md) for details, recovery, and generic-play

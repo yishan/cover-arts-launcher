@@ -4,6 +4,8 @@
 
 # Plans and Design Specifications
 
+- [Cover Arts Launcher Skill Distribution and Agent Prompt Plan](2026-09-23-cover-arts-skill-distribution.md) — direct URL installation, optional skills.sh publication, prompt changes, and acceptance gates.
 - [Multi-Firmware Cover Art Launcher Design Specification](2026-09-21-multi-firmware-cover-art-launcher-design.md) — product model, user journeys, device/browser screens, interaction rules, states, and acceptance criteria.
 - [Multi-Firmware Cover Art Launcher Implementation Plan](2026-09-20-multi-firmware-cover-art-launcher.md) — task-by-task engineering sequence, files, tests, and delivery gates.
 - [Dynamic Play Storage v0.3 Design](2026-09-25-dynamic-play-storage.md) — variable-size append allocation, per-play sidecars, partition-table transactions, migration boundaries, and phased delivery.
+- [Arbitrary Delete, Logical Reflow, and Hole Reuse](2026-09-29-arbitrary-delete-hole-reuse.md) — stable-identity deletion transactions, logical renumbering without moving apps, best-fit reuse, and recovery boundaries.
