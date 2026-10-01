@@ -92,4 +92,4 @@ README 或社区列表可使用：
 
 - 协议与验收细则：[`references/protocol.zh_CN.md`](references/protocol.zh_CN.md)
 - 可复用 ESP-IDF 组件：[`assets/launcher_contract/`](assets/launcher_contract/)
-- 公开指南：`https://cover-arts-launcher.yishan.app/skills/`
+- 公开指南：`https://calm.yishan.app/skills/`

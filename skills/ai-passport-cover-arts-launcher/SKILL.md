@@ -105,4 +105,4 @@ Do not claim that Up Long is reserved throughout the play.
 
 - Protocol and acceptance details: [`references/protocol.md`](references/protocol.md)
 - Reusable ESP-IDF component: [`assets/launcher_contract/`](assets/launcher_contract/)
-- Public guide: `https://cover-arts-launcher.yishan.app/skills/`
+- Public guide: `https://calm.yishan.app/skills/`

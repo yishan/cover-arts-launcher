@@ -20,9 +20,13 @@ const publicFiles = [
   "index.html",
   "play-source.js",
   "serial-transport.js",
+  "slot-inspector.js",
   "slot-install.js",
   "styles.css",
   "system-install.js",
+  "title-font.js",
+  "title-glyphs.js",
+  "trust-record.js",
 ];
 
 const publicDirectories = ["skills", "vendor"];

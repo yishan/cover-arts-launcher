@@ -122,6 +122,17 @@ test("deployed manager includes the protected serial transport module", () => {
   assert.match(cloudflareBuild, /"serial-transport\.js"/);
 });
 
+test("Cloudflare bundle includes the v1.5 manager support modules", () => {
+  for (const moduleName of [
+    "slot-inspector.js",
+    "title-font.js",
+    "title-glyphs.js",
+    "trust-record.js",
+  ]) {
+    assert.match(cloudflareBuild, new RegExp(`"${moduleName.replace(".", "\\.")}"`));
+  }
+});
+
 test("manager uses the stable Web Serial baud rate for sustained writes", () => {
   assert.match(app, /const WEB_SERIAL_BAUDRATE = 115200/);
   assert.match(app, /baudrate: WEB_SERIAL_BAUDRATE/);
