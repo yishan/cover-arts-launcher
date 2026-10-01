@@ -3,12 +3,13 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const root = new URL("./", import.meta.url);
-const [html, css, app, favicon, cloudflareBuild] = await Promise.all([
+const [html, css, app, favicon, cloudflareBuild, vercelIgnore] = await Promise.all([
   readFile(new URL("index.html", root), "utf8"),
   readFile(new URL("styles.css", root), "utf8"),
   readFile(new URL("app.js", root), "utf8"),
   readFile(new URL("favicon.svg", root), "utf8"),
   readFile(new URL("build-cloudflare.mjs", root), "utf8"),
+  readFile(new URL(".vercelignore", root), "utf8"),
 ]);
 
 test("manager uses the CALM identity in the masthead and favicon", () => {
@@ -131,6 +132,11 @@ test("Cloudflare bundle includes the v1.5 manager support modules", () => {
   ]) {
     assert.match(cloudflareBuild, new RegExp(`"${moduleName.replace(".", "\\.")}"`));
   }
+});
+
+test("Vercel deploy excludes duplicate module API shims", () => {
+  assert.match(vercelIgnore, /^api\/play\.mjs$/m);
+  assert.match(vercelIgnore, /^api\/resource\.mjs$/m);
 });
 
 test("manager uses the stable Web Serial baud rate for sustained writes", () => {

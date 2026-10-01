@@ -2,3 +2,5 @@ functions/
 dist/
 wrangler.jsonc
 build-cloudflare.mjs
+api/play.mjs
+api/resource.mjs
