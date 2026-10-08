@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { withFlashReadBaud } from "./serial-transport.js";
 
 const root = new URL("./", import.meta.url);
 const [html, css, app, favicon, cloudflareBuild, vercelIgnore] = await Promise.all([
@@ -189,10 +190,46 @@ test("manager uses the stable Web Serial baud rate for sustained writes", () => 
   assert.doesNotMatch(app, /baudrate:\s*460800/);
 });
 
-test("only complete App readback and SHA verification use the faster rate before sidecar writes", () => {
+test("high-speed App readback is explicit opt-in and disabled while busy", () => {
+  const input = html.match(/<input\b[^>]*id="fast-app-readback"[^>]*>/)?.[0] ?? "";
+  assert.match(input, /type="checkbox"/);
+  assert.match(input, /name="fast_app_readback"/);
+  assert.doesNotMatch(input, /\bchecked\b/);
+  assert.match(html, /115200[\s\S]*230400/);
+  assert.match(app, /\$\("#fast-app-readback"\)\.disabled = state\.busy/);
+});
+
+test("default App readback retains 115200 across consecutive verifications without reopening", async () => {
+  const wrapper = app.match(/async function withAppReadbackRate\(action\) \{([\s\S]*?)\n\}/)?.[1];
+  assert.ok(wrapper);
+  const notices = [];
+  const loader = {
+    IS_STUB: true,
+    transport: { baudrate: 115200 },
+    changeBaud() { assert.fail("default readback must not reopen serial"); },
+    readFlash() { assert.fail("same-rate readback must not issue a switch probe"); },
+  };
+  const run = new Function("state", "$", "log", "withFlashReadBaud", "WEB_SERIAL_BAUDRATE", "APP_READBACK_BAUDRATE",
+    `return async function(action) {${wrapper}\n};`)({ loader },
+    () => ({ checked: false }), (notice) => notices.push(notice), withFlashReadBaud, 115200, 230400);
+  for (let index = 0; index < 2; index++) {
+    assert.equal(await run(async () => {
+      assert.equal(loader.transport.baudrate, 115200);
+      return "full App verified";
+    }), "full App verified");
+  }
+  assert.equal(notices.length, 2);
+  for (const notice of notices) assert.match(notice, /兼容模式.*115200/);
+  const failure = Object.assign(new Error("READ_FLASH interrupted"), { code: "FLASH_READ_FAILED" });
+  await assert.rejects(run(async () => { throw failure; }), (error) => error === failure);
+  await assert.rejects(run(async () => assert.fail("broken session must not be reused")), /重新连接/);
+});
+
+test("only opted-in complete App readback and SHA verification use the faster rate before sidecar writes", () => {
   assert.match(app, /const APP_READBACK_BAUDRATE = 230400/);
   const wrapper = app.match(/async function withAppReadbackRate\(action\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
-  assert.match(wrapper, /withFlashReadBaud\(state\.loader, APP_READBACK_BAUDRATE, action/);
+  assert.match(wrapper, /\$\("#fast-app-readback"\)\.checked \? APP_READBACK_BAUDRATE : WEB_SERIAL_BAUDRATE/);
+  assert.match(wrapper, /withFlashReadBaud\(state\.loader, baudrate, action/);
   assert.match(wrapper, /已恢复写入速率/);
   const install = app.match(/async function installPlay\(\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
   assert.match(install, /await withAppReadbackRate\(async \(\) => \{[\s\S]*App 完整读回[\s\S]*App SHA 与结构校验[\s\S]*\n    \}\);\n    log\([\s\S]*writeDynamicSidecar/);

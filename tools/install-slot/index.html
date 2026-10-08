@@ -244,6 +244,15 @@
             <span><strong>确认替换所选位置</strong><small>原玩法固件及与之绑定的封面将不再可用。</small></span>
           </label>
 
+          <p class="supporting">默认兼容模式：写入与完整读回均使用 115200，安装期间不因切换速率重新打开串口。</p>
+          <details>
+            <summary>高级选项：高速 App 回读</summary>
+            <label class="check-card" for="fast-app-readback">
+              <input id="fast-app-readback" name="fast_app_readback" type="checkbox" autocomplete="off">
+              <span><strong>启用 230400 高速 App 回读</strong><small>仅加速 App 完整读回与校验，也用于修复名称与封面时的 App 核对。需要切换速率并重新打开串口，部分电脑可能失去同步。出现错误后请取消勾选，重新连接再重试；所有完整校验仍然保留。</small></span>
+            </label>
+          </details>
+
           <div class="install-actions">
             <button id="install-play" class="button button-primary button-large" type="button" disabled>追加到玩法库</button>
             <button id="repair-cover" class="button button-secondary" type="button" disabled>仅修复名称与封面</button>

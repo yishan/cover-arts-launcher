@@ -169,9 +169,14 @@ session starts. It consumes
 the final 16-byte MD5 frame before sending another command; app SHA and the
 existing metadata/cover checks remain required before directory commit. The
 log separates erase, write, full readback, verification, and commit timings.
-Writes, cover/metadata reads, and directory operations remain at 115200 baud.
-Only complete App readback and its SHA/structure verification use 230400 baud;
-cover repair uses the same temporary rate for its App SHA check. The manager
+Compatibility mode is the default: writes, complete App readback, cover/metadata
+reads, and directory operations all stay at 115200 baud. App verification does
+not change baud or reopen the port. Full SHA/structure and sidecar/cover checks,
+continuous installation, and explicit final restart remain unchanged.
+The advanced high-speed checkbox is off by default, is not saved between page
+loads, and is disabled during device operations. Only when explicitly enabled
+do complete App readback and its SHA/structure verification use 230400 baud;
+cover repair uses the same temporary rate for its App SHA check. In that mode the manager
 passes the actual previous rate to the Stub, reopens the protected serial
 streams, and checks a 32-byte partition header before/after both transitions.
 It confirms restoration to 115200 before any sidecar or directory write. Rate
@@ -179,6 +184,10 @@ switch/restore failures close the invalid session; a failed App read does not
 send a restore command through a desynchronized Stub. Native read-only tests
 showed about 109 s versus 56 s on the same 1,238,288-byte App; browser installation
 speed and continuous-install reliability still require real-device acceptance.
+If high-speed mode fails, uncheck it and reconnect before retrying. The manager
+does not automatically retry or switch rates through a failed serial session.
+This default avoids the rate-switch/reopen path implicated in a community-review
+failure; the reviewer's underlying USB/browser cause remains unconfirmed.
 If a read or acknowledgement fails, the manager closes the invalid serial
 session without resetting or erasing the device. Prepared firmware and cover
 remain available for reconnect-and-retry. This manager-only change does not

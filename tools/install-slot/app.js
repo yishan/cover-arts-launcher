@@ -28,6 +28,8 @@ const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 // USB-JTAG bridge in Chromium-based browsers. Prefer a slower, stable session;
 // this affects transfer time only, not the image written to flash.
 const WEB_SERIAL_BAUDRATE = 115200;
+// High-speed readback is opt-in: reopening the port for automatic rate changes
+// can lose Stub synchronization on some browser/USB driver combinations.
 const APP_READBACK_BAUDRATE = 230400;
 const state = {
   port: null,
@@ -205,10 +207,14 @@ async function readAppForVerification(address, length) {
 }
 
 async function withAppReadbackRate(action) {
-  return withFlashReadBaud(state.loader, APP_READBACK_BAUDRATE, action, (baudrate) => {
-    log(baudrate === APP_READBACK_BAUDRATE
-      ? `[速率] App 完整读回：${baudrate}。`
-      : `[速率] 已恢复写入速率：${baudrate}。`);
+  const baudrate = $("#fast-app-readback").checked ? APP_READBACK_BAUDRATE : WEB_SERIAL_BAUDRATE;
+  if (baudrate === WEB_SERIAL_BAUDRATE) {
+    log(`[速率] 兼容模式：App 完整读回 ${baudrate}；保持当前串口速率，不重新打开串口。`);
+  }
+  return withFlashReadBaud(state.loader, baudrate, action, (activeBaudrate) => {
+    log(activeBaudrate === APP_READBACK_BAUDRATE
+      ? `[速率] 高速模式：App 完整读回 ${activeBaudrate}。`
+      : `[速率] 已恢复写入速率：${activeBaudrate}。`);
   });
 }
 
@@ -1320,6 +1326,7 @@ function updateReplacementWarning() {
 
 function refreshActions() {
   $("#main-content").setAttribute("aria-busy", String(state.busy || state.coverBusy));
+  $("#fast-app-readback").disabled = state.busy;
   $("#connect").disabled = state.busy || Boolean(state.loader);
   $("#disconnect").disabled = state.busy || !state.transport;
   const systemReady = state.loader && state.target?.canInstall && $("#system-confirm").checked && $("#system-file").files.length && /^[0-9a-fA-F]{64}$/.test($("#system-sha").value.trim());
