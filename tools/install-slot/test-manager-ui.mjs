@@ -3,12 +3,13 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const root = new URL("./", import.meta.url);
-const [html, css, app, favicon, cloudflareBuild] = await Promise.all([
+const [html, css, app, favicon, cloudflareBuild, vercelIgnore] = await Promise.all([
   readFile(new URL("index.html", root), "utf8"),
   readFile(new URL("styles.css", root), "utf8"),
   readFile(new URL("app.js", root), "utf8"),
   readFile(new URL("favicon.svg", root), "utf8"),
   readFile(new URL("build-cloudflare.mjs", root), "utf8"),
+  readFile(new URL(".vercelignore", root), "utf8"),
 ]);
 
 test("manager uses the CALM identity in the masthead and favicon", () => {
@@ -141,6 +142,22 @@ test("deployed manager includes the protected serial transport module", () => {
   assert.equal(protectedConnections?.length, 2, "initial and continuous sessions must both use optimized receive");
   assert.match(app, /protectLoaderFlashReads\(new ESPLoader/);
   assert.match(cloudflareBuild, /"serial-transport\.js"/);
+});
+
+test("Cloudflare bundle includes the v1.5 manager support modules", () => {
+  for (const moduleName of [
+    "slot-inspector.js",
+    "title-font.js",
+    "title-glyphs.js",
+    "trust-record.js",
+  ]) {
+    assert.match(cloudflareBuild, new RegExp(`"${moduleName.replace(".", "\\.")}"`));
+  }
+});
+
+test("Vercel deploy excludes duplicate module API shims", () => {
+  assert.match(vercelIgnore, /^api\/play\.mjs$/m);
+  assert.match(vercelIgnore, /^api\/resource\.mjs$/m);
 });
 
 test("manager uses the stable Web Serial baud rate for sustained writes", () => {
