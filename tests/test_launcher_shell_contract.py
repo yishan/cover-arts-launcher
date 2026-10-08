@@ -33,6 +33,15 @@ def function_body(source: str, name: str) -> str:
 
 
 class LauncherShellContractTest(unittest.TestCase):
+    def test_compact_factory_and_runtime_boundary_checks(self) -> None:
+        partitions = read("partitions.csv")
+        self.assertRegex(partitions, r"factory,\s+app,\s+factory,\s+0x10000,\s+0x0f0000,")
+        self.assertRegex(partitions, r"otadata,\s+data,\s+ota,\s+0x7fe000,\s+0x2000,")
+        slots = read("main/launcher_slots.c")
+        partition = function_body(slots, "launcher_slots_partition")
+        self.assertIn("launcher_dynamic_arena_start", partition)
+        self.assertIn("launcher_dynamic_allocation_valid", partition)
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.main = read("main/main.c")
@@ -41,6 +50,27 @@ class LauncherShellContractTest(unittest.TestCase):
         cls.cover_view = read("main/launcher_cover_view.c")
         cls.stats = read("main/launcher_stats.c")
         cls.cmake = read("main/CMakeLists.txt")
+
+    def test_size_configuration_matches_native_preview(self) -> None:
+        config = read("sdkconfig.defaults")
+        preview_config = read("tests/launcher_preview/lv_conf.h")
+        self.assertIn("CONFIG_COMPILER_OPTIMIZATION_SIZE=y", config)
+        self.assertIn("CONFIG_LV_USE_FONT_COMPRESSED=y", config)
+        self.assertIn("#define LV_USE_FONT_COMPRESSED 1", preview_config)
+        disabled_widgets = re.findall(r"^CONFIG_(LV_USE_\w+)=n$", config, re.M)
+        for widget in disabled_widgets:
+            if widget.startswith("LV_USE_CALENDAR_HEADER_"):
+                continue  # Controlled by the disabled parent widget.
+            self.assertIn(f"#define {widget} 0", preview_config)
+        for kind in ("label", "image"):
+            self.assertNotIn(f"CONFIG_LV_USE_{kind.upper()}=n", config)
+        used = set(re.findall(r"\blv_(\w+)_create\(", self.ui))
+        self.assertLessEqual(used, {"obj", "label", "image"})
+        font = read("assets/fonts/launcher_source_han_sans_sc_16_gb2312.c")
+        self.assertIn(".bitmap_format = 1", font)
+        generator = read("tools/generate_launcher_title_font.py")
+        self.assertNotIn('"--no-compress"', generator)
+        self.assertNotIn('"--no-prefilter"', generator)
 
     def test_shell_uses_bsp_queue_slots_and_boot_adapter(self) -> None:
         for required in (

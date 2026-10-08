@@ -7,7 +7,7 @@ CONFIG_IDF_TARGET="esp32c3"
 CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
 # 固定 8MB 镜像头，关闭 detect，便于 idf.py merge-bin。
 CONFIG_ESPTOOLPY_HEADER_FLASHSIZE_UPDATE=n
-# Launcher 使用 factory、三个 OTA slot、covers 与 otadata 的固定 8 MB 布局。
+# Launcher 使用 factory、动态玩法区域及 Flash 末端的 otadata。
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
@@ -26,12 +26,52 @@ CONFIG_LV_FONT_MONTSERRAT_14=y
 CONFIG_LV_FONT_MONTSERRAT_20=y
 CONFIG_LV_TXT_ENC_UTF8=y
 CONFIG_LV_USE_FONT_PLACEHOLDER=y
+# Lossless LVGL glyph compression; preserve the complete title character set.
+CONFIG_LV_USE_FONT_COMPRESSED=y
+# The Launcher creates only base objects, images, and labels. Keep default
+# theme styling for those objects without linking unrelated widget classes.
+CONFIG_LV_USE_ANIMIMG=n
+CONFIG_LV_USE_ARC=n
+CONFIG_LV_USE_ARCLABEL=n
+CONFIG_LV_USE_BAR=n
+CONFIG_LV_USE_BUTTON=n
+CONFIG_LV_USE_BUTTONMATRIX=n
+CONFIG_LV_USE_CALENDAR=n
+CONFIG_LV_USE_CALENDAR_HEADER_ARROW=n
+CONFIG_LV_USE_CALENDAR_HEADER_DROPDOWN=n
+CONFIG_LV_USE_CANVAS=n
+CONFIG_LV_USE_CHART=n
+CONFIG_LV_USE_CHECKBOX=n
+CONFIG_LV_USE_DROPDOWN=n
+CONFIG_LV_USE_IMAGEBUTTON=n
+CONFIG_LV_USE_KEYBOARD=n
+CONFIG_LV_USE_LED=n
+CONFIG_LV_USE_LINE=n
+CONFIG_LV_USE_LIST=n
+CONFIG_LV_USE_LOTTIE=n
+CONFIG_LV_USE_MENU=n
+CONFIG_LV_USE_MSGBOX=n
+CONFIG_LV_USE_ROLLER=n
+CONFIG_LV_USE_SCALE=n
+CONFIG_LV_USE_SLIDER=n
+CONFIG_LV_USE_SPAN=n
+CONFIG_LV_USE_SPINBOX=n
+CONFIG_LV_USE_SPINNER=n
+CONFIG_LV_USE_SWITCH=n
+CONFIG_LV_USE_TEXTAREA=n
+CONFIG_LV_USE_TABLE=n
+CONFIG_LV_USE_TABVIEW=n
+CONFIG_LV_USE_TILEVIEW=n
+CONFIG_LV_USE_WIN=n
+CONFIG_LV_BUILD_EXAMPLES=n
 # LVGL 内置 malloc 池大小(KB)。它是独立静态区、不与系统堆共享,配大了会白白占用 RAM。
 # 本 demo UI 简单,24KB 足够;若自建复杂界面出现绘制卡死/看门狗,调大此值。
 CONFIG_LV_MEM_SIZE_KILOBYTES=24
 
 # --- 系统 ---
 CONFIG_FREERTOS_HZ=1000
+# Optimize the linked firmware for Flash size rather than debugger stepping.
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
 
 # --- Radios ---
 # The launcher only scans local partitions and does not own networking or BLE.

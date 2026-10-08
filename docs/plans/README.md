@@ -4,6 +4,10 @@
 
 # Plans and Design Specifications
 
+- [Compact Launcher Layout](2026-10-08-compact-launcher-layout.md) — recover 512 KiB, recognize both dynamic layouts, and separate destructive initialization from firmware-only updates.
+
+- [Launcher Size Optimization](2026-10-01-launcher-size-optimization.md) — measured code/font reductions, unchanged-layout boundaries, and compact-layout migration considerations.
+
 - [Cover Arts Launcher Skill Distribution and Agent Prompt Plan](2026-09-23-cover-arts-skill-distribution.md) — direct URL installation, optional skills.sh publication, prompt changes, and acceptance gates.
 - [Multi-Firmware Cover Art Launcher Design Specification](2026-09-21-multi-firmware-cover-art-launcher-design.md) — product model, user journeys, device/browser screens, interaction rules, states, and acceptance criteria.
 - [Multi-Firmware Cover Art Launcher Implementation Plan](2026-09-20-multi-firmware-cover-art-launcher.md) — task-by-task engineering sequence, files, tests, and delivery gates.

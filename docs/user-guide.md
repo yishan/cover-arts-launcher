@@ -29,7 +29,7 @@ The hosted Play Manager accepts an official Play detail URL or a local `.bin`.
 Review the detected title, version, source ID, firmware hash, and cover before
 writing. It validates the ESP32-C3 app and checks Chinese title glyph coverage.
 
-v1.5.0 allocates each play from its verified app length plus its sidecar. It
+v1.6.0 allocates each play from its verified app length plus its sidecar. It
 first reuses the smallest released range that fits, then uses tail space. The
 absolute maximum is 16 OTA play entries, but available Flash normally limits the
 real count first.
@@ -53,7 +53,7 @@ copying their application bytes. A later install can reuse the released range.
 
 If total free space is sufficient but split into ranges that are all too small,
 the manager stops before erasing and reports that no contiguous range fits.
-Automatic physical compaction is not included in v1.5.0.
+Automatic physical compaction is not included in v1.6.0.
 
 ## Generic plays and optional return support
 

@@ -4,6 +4,23 @@
 
 # Changelog
 
+## Unreleased
+
+## v1.6.0 — 2026-10-08
+
+- Reduced Factory reservation by 512 KiB; compact-layout play storage is
+  6.9375 MiB. Complete initialization clears the old play library.
+- Compressed Chinese glyphs losslessly, enabled size optimization, and disabled
+  unused LVGL widgets without reducing title coverage.
+- Added explicit compact/legacy dynamic-layout recognition and allocation bounds
+  checks in the firmware and browser installer.
+- Accelerated complete App readback at 230400 baud with protected transport
+  handling; restores 115200 baud before writes and retains full verification.
+- Preserved consecutive installation, arbitrary deletion, logical reordering,
+  hole reuse, and generic-play return behavior.
+- Added destination-guarded release preflight and a publication SOP for
+  `yishan/cover-arts-launcher`.
+
 ## v1.5.0 — 2026-10-01
 
 - Added arbitrary play deletion with transactional logical reordering; retained

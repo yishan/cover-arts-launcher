@@ -122,8 +122,6 @@ def main() -> None:
             "lvgl",
             "--lv-include",
             "lvgl.h",
-            "--no-compress",
-            "--no-prefilter",
             "--no-kerning",
             "--range",
             compact_ranges(title_codepoints()),
@@ -135,6 +133,9 @@ def main() -> None:
         ],
         check=True,
     )
+    # Keep generated sources deterministic and clean under git diff --check.
+    OUTPUT.write_text(OUTPUT.read_text(encoding="utf-8").rstrip() + "\n",
+                      encoding="utf-8")
     print(OUTPUT)
     print(BROWSER_OUTPUT)
 

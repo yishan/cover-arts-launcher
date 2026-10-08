@@ -118,6 +118,6 @@ test("allows one image to fill the dynamic arena and rejects the next aligned im
   assert.equal(extractAppImage(buildAppImage(MAX_APP_IMAGE_SIZE)).length, MAX_APP_IMAGE_SIZE);
   assert.throws(
     () => extractAppImage(buildAppImage(MAX_APP_IMAGE_SIZE + 0x10)),
-    /exceeds.*0x660000/i,
+    /exceeds.*0x6e0000/i,
   );
 });

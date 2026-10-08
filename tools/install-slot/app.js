@@ -3,7 +3,7 @@ import { COVER_PAYLOAD_LENGTH, coverRgb565ToRgba, rgbaToCoverRgb565 } from "./co
 import { coverCropRect, encodeCoverPreview } from "./cover-image.js";
 import { encodePartitionTable, espImageLength, extractAppImage, parsePartitionTable } from "./extract-app-image.js";
 import { resetAndDisconnect, resetToApplication } from "./device-reset.js";
-import { protectLoaderFlashReads, protectTransportWrites } from "./serial-transport.js";
+import { protectLoaderFlashReads, protectTransportReads, protectTransportWrites, withFlashReadBaud } from "./serial-transport.js";
 import { managerApiUrl, normalizeOfficialPlay } from "./play-source.js";
 import { inspectLauncherTitle, requireLauncherTitle } from "./title-font.js";
 import {
@@ -19,7 +19,7 @@ import {
   reassignDynamicSidecarRecord,
 } from "./dynamic-sidecar.js";
 import { inspectDynamicLibraryFast } from "./dynamic-slot-inspector.js";
-import { DYNAMIC_EMPTY_PARTITIONS, SYSTEM_ERASE_RANGES, classifySystemTarget, makeEraseVerificationSamples } from "./system-install.js";
+import { classifySystemTarget, makeEraseVerificationSamples, prepareDynamicSystemImage } from "./system-install.js";
 
 const $ = (selector) => document.querySelector(selector);
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -27,6 +27,7 @@ const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 // USB-JTAG bridge in Chromium-based browsers. Prefer a slower, stable session;
 // this affects transfer time only, not the image written to flash.
 const WEB_SERIAL_BAUDRATE = 115200;
+const APP_READBACK_BAUDRATE = 230400;
 const state = {
   port: null,
   transport: null,
@@ -153,7 +154,50 @@ async function verifySegment(segment) {
   if (!equalBytes(actual, segment.data)) throw new Error(`0x${segment.address.toString(16)} 写后读取不一致。`);
 }
 
-function samePartitionTable(actual, expected = DYNAMIC_EMPTY_PARTITIONS) {
+async function discardFailedReadSession(error) {
+  if (error.code !== "FLASH_READ_FAILED") return;
+  // Closing the broken session is not a reset or a directory repair. Keep the
+  // prepared play/cover so the user can reconnect and retry the same input.
+  await disconnect(false);
+  setResult("#device-message", "串口读回被中断，失效连接已关闭。请重新连接设备后重试；无需重新读取玩法资料。", "error");
+  log("已关闭失步的串口会话；未自动重启、清空设备或提交新目录。");
+}
+
+async function installPhase(label, action) {
+  const started = performance.now();
+  log(`[阶段] ${label}：开始`);
+  try {
+    const result = await action();
+    log(`[阶段] ${label}：完成，${((performance.now() - started) / 1000).toFixed(3)} s`);
+    return result;
+  } catch (error) {
+    log(`[阶段] ${label}：中断，${((performance.now() - started) / 1000).toFixed(3)} s`);
+    throw error;
+  }
+}
+
+async function readAppForVerification(address, length) {
+  let loggedPercent = -25;
+  setDeviceState("App 读回校验 0%", "working");
+  return state.loader.readFlash(address, length, (_packet, received, total) => {
+    const percent = Math.floor(received / total * 100);
+    setDeviceState(`App 读回校验 ${percent}%`, "working");
+    if (percent >= loggedPercent + 25 || percent === 100) {
+      log(`App 读回：${received}/${total} bytes（${percent}%）`);
+      loggedPercent = percent;
+    }
+  });
+}
+
+async function withAppReadbackRate(action) {
+  return withFlashReadBaud(state.loader, APP_READBACK_BAUDRATE, action, (baudrate) => {
+    log(baudrate === APP_READBACK_BAUDRATE
+      ? `[速率] App 完整读回：${baudrate}。`
+      : `[速率] 已恢复写入速率：${baudrate}。`);
+  });
+}
+
+function samePartitionTable(actual, expected) {
   return actual.length === expected.length && actual.every((entry, index) => {
     const wanted = expected[index];
     return ["name", "type", "subtype", "offset", "size"].every((key) => entry[key] === wanted[key]);
@@ -179,7 +223,7 @@ async function connect() {
     if (!navigator.serial) throw new Error("当前浏览器不支持 Web Serial。");
     log("请选择 AI Passport 串口；设备将进入下载模式。 ");
     state.port = await navigator.serial.requestPort();
-    state.transport = protectTransportWrites(new Transport(state.port, false));
+    state.transport = protectTransportReads(protectTransportWrites(new Transport(state.port, false)));
     state.loader = protectLoaderFlashReads(new ESPLoader({
       transport: state.transport,
       baudrate: WEB_SERIAL_BAUDRATE,
@@ -195,6 +239,7 @@ async function connect() {
     if (state.target.kind === "dynamic-launcher") {
       state.library = await inspectDynamicLibraryFast(state.loader, identity.partitionTableSector);
       state.slots = state.library.slots;
+      log(`分区：${state.library.layout.id}；玩法区域 ${formatBytes(state.library.arenaBytes)}，剩余 ${formatBytes(state.library.remainingBytes)}。`);
       renderSlots();
     } else {
       state.library = null;
@@ -235,7 +280,7 @@ async function refreshContinuousSession() {
   log("上一款玩法已完成；正在自动刷新下载会话，避免长时间复用 stub 导致串口失步。");
   try { await state.transport.disconnect(); } catch {}
 
-  state.transport = protectTransportWrites(new Transport(state.port, false));
+  state.transport = protectTransportReads(protectTransportWrites(new Transport(state.port, false)));
   state.loader = protectLoaderFlashReads(new ESPLoader({
     transport: state.transport,
     baudrate: WEB_SERIAL_BAUDRATE,
@@ -297,12 +342,8 @@ async function installSystem() {
     const publishedSha = normalizeSha($("#system-sha").value);
     setResult("#system-result", "正在验证发布文件…");
     const actualSha = await verifyPublished(full, publishedSha);
-    if (full.length < 0x11000) throw new Error("完整镜像过短。");
-    const tableSector = full.subarray(0x8000, 0x9000);
-    const table = parsePartitionTable(tableSector);
-    if (!table.md5Valid || !samePartitionTable(table.entries)) throw new Error("发布镜像不是兼容的 Launcher 分区布局。");
-    const factory = extractAppImage(full);
-    if (factory.kind !== "merged" || factory.appOffset !== 0x10000) throw new Error("发布镜像缺少 0x10000 factory Launcher。");
+    const systemImage = await prepareDynamicSystemImage(full);
+    const { factory, eraseRanges } = systemImage;
     const segments = [
       { name: "bootloader", address: 0x0, data: full.slice(0, 0x8000) },
       { name: "partition table", address: 0x8000, data: full.slice(0x8000, 0x9000) },
@@ -310,11 +351,11 @@ async function installSystem() {
     ];
     log(`完整镜像 SHA-256 已确认：${actualSha}`);
     setResult("#system-result", "正在清空动态玩法区和 OTA 选择…");
-    for (const range of SYSTEM_ERASE_RANGES) {
+    for (const range of eraseRanges) {
       log(`擦除 ${range.name}：0x${range.address.toString(16)} + 0x${range.size.toString(16)}`);
       await eraseRegion(range.address, range.size);
     }
-    for (const range of SYSTEM_ERASE_RANGES) {
+    for (const range of eraseRanges) {
       for (const sample of makeEraseVerificationSamples(range, 32)) {
         if (!allErased(await state.loader.readFlash(sample.address, sample.length))) throw new Error(`${range.name} 擦除校验失败。`);
       }
@@ -325,7 +366,7 @@ async function installSystem() {
       await verifySegment(segment);
     }
     const targetTable = parsePartitionTable(await state.loader.readFlash(0x8000, 0x1000));
-    if (!targetTable.md5Valid || !samePartitionTable(targetTable.entries)) throw new Error("设备上的 Launcher 分区表复核失败。");
+    if (!targetTable.md5Valid || !samePartitionTable(targetTable.entries, systemImage.entries)) throw new Error("设备上的 Launcher 分区表复核失败。");
     const factoryReadback = await state.loader.readFlash(0x10000, factory.length);
     if (espImageLength(factoryReadback, 0) !== factory.length) throw new Error("设备上的 factory Launcher 不可读。");
     const otaData = await state.loader.readFlash(0x7fe000, 0x2000);
@@ -341,6 +382,7 @@ async function installSystem() {
   } catch (error) {
     setResult("#system-result", `未完成：${error.message} 请重新进入 ROM 下载模式，并从完整安装开头重试。`, "error");
     log(`完整系统安装失败：${error.message}`);
+    await discardFailedReadSession(error);
   } finally {
     state.busy = false;
     refreshActions();
@@ -736,9 +778,10 @@ async function writeReassignedDynamicSidecar(slot, nextSlotId) {
 }
 
 async function commitDynamicTable(slots, onWritten = () => {}) {
-  const tableBytes = encodePartitionTable(dynamicPartitionEntries(slots));
+  const entries = dynamicPartitionEntries(slots, state.library.layout);
+  const tableBytes = encodePartitionTable(entries);
   const decoded = parsePartitionTable(tableBytes);
-  if (!decoded.md5Valid || !samePartitionTable(decoded.entries, dynamicPartitionEntries(slots))) {
+  if (!decoded.md5Valid || !samePartitionTable(decoded.entries, entries)) {
     throw new Error("新分区表在写入前未通过 MD5 与布局校验。");
   }
   await eraseRegion(0x8000, 0x1000);
@@ -860,26 +903,32 @@ async function installPlay() {
     state.preparedPlay.sourceId = $("#play-source-id").value.trim();
     if (state.preparedPlay.sourceKind === "play-api" && !state.preparedPlay.sourceId) throw new Error("Play API 来源必须保留 Source ID。");
     const cover = await selectedCoverPayload();
-    plan = appendDynamicSlot(state.slots, state.preparedPlay.app.length);
+    plan = appendDynamicSlot(state.slots, state.preparedPlay.app.length, state.library.layout);
     const slot = plan.slot;
     setResult("#play-result", `正在分配位置 ${slot.slotId + 1}：${formatBytes(slot.size)}…`);
-    await eraseRegion(slot.offset, slot.size);
-    for (const sample of makeEraseVerificationSamples({ address: slot.offset, size: slot.size }, 32)) {
-      if (!allErased(await state.loader.readFlash(sample.address, sample.length))) throw new Error("新玩法区域擦除校验失败。");
-    }
+    await installPhase("擦除新玩法区域", () => eraseRegion(slot.offset, slot.size));
+    await installPhase("擦除读回检查", async () => {
+      for (const sample of makeEraseVerificationSamples({ address: slot.offset, size: slot.size }, 32)) {
+        if (!allErased(await state.loader.readFlash(sample.address, sample.length))) throw new Error("新玩法区域擦除校验失败。");
+      }
+    });
     const appSegment = { address: slot.offset, data: state.preparedPlay.app };
-    await writeSegments([appSegment], `安装位置 ${slot.slotId + 1}`);
-    const readback = await state.loader.readFlash(slot.offset, state.preparedPlay.app.length);
-    if (toHex(await sha256(readback)) !== state.preparedPlay.appSha) throw new Error("App SHA 写后校验失败。");
-    if (espImageLength(readback) !== state.preparedPlay.app.length) throw new Error("App 结构读回校验失败。");
+    await installPhase("App 写入", () => writeSegments([appSegment], `安装位置 ${slot.slotId + 1}`));
+    await withAppReadbackRate(async () => {
+      const readback = await installPhase("App 完整读回", () => readAppForVerification(slot.offset, state.preparedPlay.app.length));
+      await installPhase("App SHA 与结构校验", async () => {
+        if (toHex(await sha256(readback)) !== state.preparedPlay.appSha) throw new Error("App SHA 写后校验失败。");
+        if (espImageLength(readback) !== state.preparedPlay.app.length) throw new Error("App 结构读回校验失败。");
+      });
+    });
     log(`位置 ${slot.slotId + 1} App SHA 已验证：${state.preparedPlay.appSha}`);
-    await writeDynamicSidecar({ slot, payload: cover, imageLength: state.preparedPlay.app.length, ...state.preparedPlay });
+    await installPhase("DPS1 与封面写入校验", () => writeDynamicSidecar({ slot, payload: cover, imageLength: state.preparedPlay.app.length, ...state.preparedPlay }));
 
     tableCommitStarted = true;
     setResult("#play-result", "App 与 DPS1 已验证，正在最后提交玩法目录…");
-    await commitDynamicTable(plan.slots, () => { tableWritten = true; });
-    await clearOtaSelection();
-    state.library = await inspectDynamicLibraryFast(state.loader);
+    await installPhase("玩法目录提交与校验", () => commitDynamicTable(plan.slots, () => { tableWritten = true; }));
+    await installPhase("清除 OTA 选择", clearOtaSelection);
+    state.library = await installPhase("玩法库重新扫描", () => inspectDynamicLibraryFast(state.loader));
     state.slots = state.library.slots;
     const rescanned = state.slots[slot.slotId];
     if (!rescanned || rescanned.state !== "ready" || rescanned.title !== state.preparedPlay.title) {
@@ -903,6 +952,7 @@ async function installPlay() {
         : "旧玩法目录保持不变，未完成数据不可启动；可重新连接后重试。";
     setResult("#play-result", `玩法安装不完整：${error.message}。${recovery}`, "error");
     log(`玩法安装失败：${error.message}`);
+    await discardFailedReadSession(error);
   }
 
   state.busy = false;
@@ -927,10 +977,12 @@ async function repairMetadataCover() {
 
     setResult("#play-result", `正在核对位置 ${slotId + 1} 的 App SHA；不会擦除 App…`);
     if (slot.imageLength !== state.preparedPlay.app.length) throw new Error("位置中的 App 长度与当前玩法不一致。");
-    const readback = await state.loader.readFlash(slot.offset, slot.imageLength);
-    if (toHex(await sha256(readback)) !== state.preparedPlay.appSha) {
-      throw new Error("位置中的 App SHA 与当前玩法不一致，已拒绝修改名称和封面。");
-    }
+    await withAppReadbackRate(async () => {
+      const readback = await readAppForVerification(slot.offset, slot.imageLength);
+      if (toHex(await sha256(readback)) !== state.preparedPlay.appSha) {
+        throw new Error("位置中的 App SHA 与当前玩法不一致，已拒绝修改名称和封面。");
+      }
+    });
     await writeDynamicSidecar({
       slot,
       payload: state.preparedCover.payload,
@@ -953,6 +1005,8 @@ async function repairMetadataCover() {
   } catch (error) {
     setResult("#play-result", `名称与封面修复未完成：${error.message}`, "error");
     log(`名称与封面修复失败：${error.message}`);
+    repaired = false;
+    await discardFailedReadSession(error);
     return;
   } finally {
     if (!repaired) {
@@ -991,7 +1045,7 @@ async function eraseSelectedSlot() {
     }
     if (!$("#erase-confirm").checked) throw new Error("请先确认擦除所选位置。");
 
-    const plan = removeDynamicSlot(state.slots, slotId);
+    const plan = removeDynamicSlot(state.slots, slotId, state.library.layout);
     removedSlot = plan.removedSlot;
     setResult("#play-result", `正在移除位置 ${slotId + 1}，并重排后续 ${plan.moves.length} 个玩法…`);
     for (const move of plan.moves) {
@@ -1021,7 +1075,7 @@ async function eraseSelectedSlot() {
     setResult("#play-result", `原位置 ${slotId + 1} 已移除；后续玩法已连续重排，释放空间会自动优先复用。`, "ok");
     log(`位置 ${slotId + 1} 删除、逻辑重排与空洞擦除完成。`);
   } catch (error) {
-    if (tableWritten) {
+    if (tableWritten && error.code !== "FLASH_READ_FAILED") {
       try {
         state.library = await inspectDynamicLibraryFast(state.loader);
         state.slots = state.library.slots;
@@ -1031,12 +1085,13 @@ async function eraseSelectedSlot() {
       }
     }
     const recovery = tableWritten
-      ? `玩法目录已经提交${removedSlot ? "；未擦净的释放区域会在下次安装前重新擦除" : ""}。请保持设备连接并重新扫描；若分区表无法识别，再执行完整系统恢复。`
+      ? `玩法目录已经提交${removedSlot ? "；未擦净的释放区域会在下次安装前重新擦除" : ""}。请重新连接并扫描；若分区表无法识别，再执行完整系统恢复。`
       : tableCommitStarted
         ? "分区表提交已经开始，请重新连接并扫描；若无法识别动态玩法库，执行完整系统恢复。"
         : "设备目录未修改。";
     setResult("#play-result", `位置擦除未完成：${error.message} ${recovery}`, "error");
     log(`位置擦除失败：${error.message}`);
+    await discardFailedReadSession(error);
   } finally {
     state.busy = false;
     refreshActions();

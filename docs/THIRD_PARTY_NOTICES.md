@@ -6,7 +6,7 @@
 
 Cover Arts Launcher is distributed under the repository's [MIT License](../LICENSE).
 The following notices describe material source and runtime dependencies included
-in the v1.0.0 source distribution. They are acknowledgements and license records,
+in the v1.6.0 source distribution. They are acknowledgements and license records,
 not claims of endorsement.
 
 ## FoloToy AI Passport

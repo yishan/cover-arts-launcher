@@ -23,4 +23,13 @@ typedef enum {
 launcher_slot_state_t launcher_slot_state_from_ota(
     launcher_ota_state_t ota_state);
 
+/** Derive the play arena only for reviewed dynamic Factory layouts. */
+bool launcher_dynamic_arena_start(uint32_t factory_address,
+                                  uint32_t factory_size,
+                                  uint32_t *arena_start);
+
+/** Reject allocations inside Factory, outside the arena, or without a sidecar. */
+bool launcher_dynamic_allocation_valid(uint32_t arena_start,
+                                       uint32_t address, uint32_t size);
+
 #endif

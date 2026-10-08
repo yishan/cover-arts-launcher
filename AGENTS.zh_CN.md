@@ -6,6 +6,14 @@
 
 本文是本仓库 AI 辅助工作的唯一必读入口。根据下方路由表读取当前任务所需文档，不要默认加载全部 README。
 
+## Cover Arts Launcher 发布边界
+
+Launcher 的提交、标签、Release 和固件资产只发布到 `yishan/cover-arts-launcher`。
+不得向 `folotoy/ai-passport` 发布产品改动，也不得从当前 worktree 的 `origin` 推断发布目标。
+发布前先读[发布 SOP](docs/development/release/launcher-release-sop.zh_CN.md)，运行
+`python3 tools/release_preflight.py`。已有标签或流水线应接续处理，不重新创建。
+仅修改文档或 CI 时，不需要重新编译固件。
+
 ## 必需 AI 技能
 
 以下五个技能是本仓库 AI 辅助开发的必需项：`passport-develop`、
@@ -54,7 +62,7 @@
 | 中文 UI 或字体 | `docs/development/engineering/lvgl-chinese-fonts.zh_CN.md`、应用字体素材、配置与控件样式 |
 | Wi-Fi 联网或蓝牙配网 | `docs/development/engineering/wifi-provisioning.zh_CN.md`、其中引用的 `demo/blufi-provisioning` 实现 |
 | 构建、测试、依赖、分区 | `docs/development/engineering/build-and-test.zh_CN.md`、`docs/development/engineering/firmware-layout.zh_CN.md`、`sdkconfig.defaults`、`partitions.csv` |
-| CI 或发布 | `docs/development/ci/CI-*.zh_CN.md` 中的对应文件与 `.github/workflows/` |
+| CI 或发布 | `docs/development/release/launcher-release-sop.zh_CN.md`、`docs/development/ci/CI-*.zh_CN.md` 中的对应文件与 `.github/workflows/` |
 | 项目开发完成 | `docs/development/release/project-completion.zh_CN.md`（再进入 `issue-suggestions` 或 `experience-pr` skill） |
 | 文档 | `docs/contribution/doc-conventions.zh_CN.md`、`docs/README.zh_CN.md` |
 | Commit 或 PR | `docs/contribution/commit-and-pr.zh_CN.md` |

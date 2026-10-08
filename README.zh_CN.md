@@ -8,7 +8,7 @@ Cover Arts Launcher 可以把 FoloToy AI Passport 变成以封面为主的玩法
 实际已安装的玩法，用户可浏览封面、启动玩法，并在重启或重新上电后回到玩法库。
 
 本仓库包含 Launcher 固件、浏览器端管理工具、Host tests、构建工具和供创作者选择接入的
-兼容 Skill。当前公开版本为 **v1.5.0**。
+兼容 Skill。当前公开版本为 **v1.6.0**。
 
 ## 它能做什么
 
@@ -23,30 +23,31 @@ Cover Arts Launcher 可以把 FoloToy AI Passport 变成以封面为主的玩法
 - 重启或重新上电后返回 Launcher，不会删除已安装玩法。
 - 创作者可选择在玩法已有封面页接入长按 `Up` 返回；该操作不会占用游戏过程中的按键。
 
-## 安装 v1.5.0
+## 安装 v1.6.0
 
 推荐使用线上[玩法管理器](https://calm.yishan.app/)。请使用桌面版 Chrome 或 Edge，
 通过支持数据传输的 USB 线连接 AI Passport，然后选择完整安装 Launcher。
 
-从 [v1.5.0 Release](https://github.com/yishan/cover-arts-launcher/releases/tag/v1.5.0)
+从 [v1.6.0 Release](https://github.com/yishan/cover-arts-launcher/releases/tag/v1.6.0)
 下载：
 
-- `FoloToy-AI-Passport-Cover-Arts-Launcher-v1.5.0-full.bin`：从 `0x0` 写入的完整
+- `FoloToy-AI-Passport-Cover-Arts-Launcher-v1.6.0-full.bin`：从 `0x0` 写入的完整
   8 MiB 固件。
-- `FoloToy-AI-Passport-Cover-Arts-Launcher-v1.5.0-full.bin.zip`：同一固件的压缩包；
+- `FoloToy-AI-Passport-Cover-Arts-Launcher-v1.6.0-full.bin.zip`：同一固件的压缩包；
   选择写入前先解压。
 - `SHA256SUMS.txt`：发布时生成的完整性校验值。
 - `THIRD_PARTY_NOTICES.md`：来源和许可证致谢。
 
-从 v1.3.1 之前的固定位置 Launcher 首次完整安装时，会替换旧版 Flash 布局并清除旧玩法。
-迁移完成后需要重新添加玩法。开始前请阅读[安装指南](docs/installation.zh_CN.md)。
+v1.6.0 的玩法区域为 6.9375 MiB，比 v1.5.0 多 512 KiB。采用紧凑布局需要完整初始化，
+会清除已安装的玩法和封面；写入原始完整镜像还可能重置已有设置。请准备重新安装玩法，
+保存需要保留的数据，并先阅读[安装指南](docs/installation.zh_CN.md)。
 
 ## 使用玩法库
 
 1. 打开[玩法管理器](https://calm.yishan.app/)并连接设备。
 2. 导入官方 Play URL，或选择本地兼容的 `.bin` 文件。
 3. 核对识别到的标题、版本、Source ID、固件哈希和封面。
-4. 连续安装一个或多个玩法；v1.5.0 按逻辑顺序追加，并优先复用能够容纳玩法的最小释放空间。
+4. 连续安装一个或多个玩法；v1.6.0 按逻辑顺序追加，并优先复用能够容纳玩法的最小释放空间。
 5. 完成本次会话后统一重启设备，在真机上确认新封面和启动行为。
 
 详情页、故障恢复及通用玩法行为见[用户指南](docs/user-guide.zh_CN.md)。
@@ -57,7 +58,7 @@ Cover Arts Launcher 可以把 FoloToy AI Passport 变成以封面为主的玩法
 希望提供更快捷返回方式的创作者，可以使用
 [`ai-passport-cover-arts-launcher`](skills/ai-passport-cover-arts-launcher/SKILL.zh_CN.md)
 Skill，仅在玩法已有封面页或开始页接入 `Up Long`。公开指南和 Agent 提示词位于
-[cover-arts-launcher.yishan.app/skills](https://cover-arts-launcher.yishan.app/skills/)。
+[calm.yishan.app/skills](https://calm.yishan.app/skills/)。
 
 ## 开发与验证
 

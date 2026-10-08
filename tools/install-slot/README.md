@@ -11,6 +11,15 @@ not pre-reserve three fixed 2 MiB positions.
 
 ## Run locally
 
+The updated manager recognizes both published v1.5.0 dynamic partitions and
+the v1.6.0 compact candidate. It uses the actual Factory end for allocation and
+keeps the detected layout when committing an installation or deletion. Compact
+initialization releases 512 KiB but removes existing plays/covers; a Factory-only
+update does not change capacity. Read the
+[compact migration guide](../../docs/plans/2026-10-08-compact-launcher-layout.md)
+before initializing a device. Deploy this manager before distributing compact
+firmware; the older fixed-boundary manager cannot recognize that layout.
+
 Use desktop Chrome or Edge. Web Serial requires a secure context; the supplied
 loopback server qualifies and also provides a narrowly scoped proxy for public
 Play metadata and assets from `ai-passport.folotoy.cn`.
@@ -143,6 +152,33 @@ interrupted, reconnecting and rescanning comes first; reinstall is suggested
 only when the dynamic library can no longer be recognized. The manager also
 serializes Web Serial writes and releases every writer in a `finally` block so
 an exceptional write cannot leave the stream locked.
+
+Flash readback uses preallocated result buffers and a single in-flight 4 KiB
+Stub packet, with a cumulative acknowledgement after every packet. It consumes
+serial input through an event-driven chunk queue and decodes SLIP into a
+growable packet buffer, avoiding 1 ms polling and per-byte concatenation.
+Queued input is capped at 1 MiB and a decoded packet at 64 KiB. Packet reads
+have one absolute deadline; closed/corrupted streams fail rather than returning
+partial data. Disconnect cancels the reader and releases its lock before a new
+session starts. It consumes
+the final 16-byte MD5 frame before sending another command; app SHA and the
+existing metadata/cover checks remain required before directory commit. The
+log separates erase, write, full readback, verification, and commit timings.
+Writes, cover/metadata reads, and directory operations remain at 115200 baud.
+Only complete App readback and its SHA/structure verification use 230400 baud;
+cover repair uses the same temporary rate for its App SHA check. The manager
+passes the actual previous rate to the Stub, reopens the protected serial
+streams, and checks a 32-byte partition header before/after both transitions.
+It confirms restoration to 115200 before any sidecar or directory write. Rate
+switch/restore failures close the invalid session; a failed App read does not
+send a restore command through a desynchronized Stub. Native read-only tests
+showed about 109 s versus 56 s on the same 1,238,288-byte App; browser installation
+speed and continuous-install reliability still require real-device acceptance.
+If a read or acknowledgement fails, the manager closes the invalid serial
+session without resetting or erasing the device. Prepared firmware and cover
+remain available for reconnect-and-retry. This manager-only change does not
+require reflashing the Launcher. Reload the page after ending the old connection
+to load the new readback implementation; real-device acceptance remains required.
 
 Any logical position can be removed. Before committing the new directory, the
 manager rewrites the inactive DPS1 bank of each following play with its new

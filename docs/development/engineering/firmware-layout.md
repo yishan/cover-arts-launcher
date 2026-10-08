@@ -14,10 +14,16 @@ to the partition table according to each verified application's actual size.
 | --- | --- | ---: | ---: | --- |
 | `nvs` | data/NVS | `0x9000` | `0x6000` | Launcher and application key-value namespaces |
 | `phy_init` | data/PHY | `0xF000` | `0x1000` | PHY initialization data |
-| `factory` | app/factory | `0x10000` | `0x170000` | Launcher, maximum 1,507,328 bytes |
+| `factory` | app/factory | `0x10000` | `0x0F0000` | Launcher, maximum 983,040 bytes |
 | `otadata` | data/OTA | `0x7FE000` | `0x2000` | Standard ESP-IDF boot selection |
 
-The dynamic play arena is `0x180000..0x7F0000`. Each installed play becomes a
+The v1.6.0 compact layout uses `0x100000..0x7F0000` (6.9375 MiB).
+Published v1.5.0 devices retain Factory size `0x170000` and their arena
+`0x180000..0x7F0000` (6.4375 MiB); both layouts are recognized at runtime.
+Only explicit compact initialization releases the extra 512 KiB, removing
+installed plays/covers. Normal play operations and Factory-only updates never
+resize Factory. See [compact migration](../../plans/2026-10-08-compact-launcher-layout.md).
+Each installed play becomes a
 contiguously numbered `ota_0..ota_15` entry, but its physical offset does not
 have to match its logical order after deletion. Its allocation is the verified
 application length rounded up to 64 KiB, plus one 64 KiB DPS1 sidecar at the
@@ -44,7 +50,9 @@ compacted in v1.5.0.
 
 The complete-system image can be sparse and does not prove that the dynamic
 play arena is empty. A first-time installation must explicitly erase and verify
-`0x180000..0x7F0000` and `otadata` before reporting an empty library.
+the incoming layout's arena and `otadata` before reporting an empty library.
+Validate an empty incoming directory, Factory checksum/SHA, length, and partition
+fit before any erase. Do not use the old arena start for compact initialization.
 
 ## Enforced validation
 

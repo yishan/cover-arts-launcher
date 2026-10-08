@@ -79,6 +79,7 @@ run_static_checks() {
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_launcher_contract_source.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_check_repo.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_firmware_artifact.py
+    PYTHONDONTWRITEBYTECODE=1 python3 tests/test_release_preflight.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_verify_firmware.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_archive_firmware.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_install_passport_skills.py

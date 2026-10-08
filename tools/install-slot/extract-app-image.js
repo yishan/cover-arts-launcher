@@ -8,7 +8,9 @@
 
 // The dynamic library can devote the complete play arena to one image, minus
 // its mandatory 64 KiB DPS1 sidecar.
-export const MAX_APP_IMAGE_SIZE = 0x660000;
+// Parsing permits the compact maximum; the inspected device's allocator still
+// rejects images that do not fit its actual (possibly legacy) arena.
+export const MAX_APP_IMAGE_SIZE = 0x6e0000;
 export const ESP_IMAGE_MAGIC = 0xe9;
 export const ESP32C3_CHIP_ID = 5;
 const ESP_IMAGE_CHECKSUM_INITIAL = 0xef;

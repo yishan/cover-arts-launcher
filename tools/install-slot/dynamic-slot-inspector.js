@@ -147,6 +147,9 @@ export async function inspectDynamicLibraryFast(loader, partitionTableSector = n
   for (const partition of layout.slots) slots.push(await inspectPartitionFast(loader, partition));
   return {
     kind: "dynamic-launcher",
+    layout: layout.layout,
+    arenaStart: layout.arenaStart,
+    arenaBytes: layout.arenaBytes,
     slots,
     slotCount: slots.length,
     nextOffset: layout.nextOffset,

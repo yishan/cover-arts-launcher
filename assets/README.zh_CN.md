@@ -21,6 +21,10 @@
 16 px、2 bpp 标题字库。它包含可打印 ASCII、CJK 标点、全角字符，以及 GB2312
 一级字表的 3755 个常用简体汉字。不在字表中的生僻字由 LVGL 显示占位符。
 
+位图使用带预过滤的 LVGL 无损压缩；必须保持
+`CONFIG_LV_USE_FONT_COMPRESSED=y` 及对应的主机预览设置。
+字符覆盖范围、2 bpp 量化和排版度量均保持不变。
+
 源字型为 LVGL 9.5.0 固定版本中自带的 Source Han Sans SC，位于
 `managed_components/lvgl__lvgl/scripts/built_in_font/`，采用 SIL Open Font
 License 1.1。使用 `lv_font_conv` 1.5.3 重新生成 C 源码：

@@ -6,6 +6,15 @@
 
 This file is the only mandatory entry point for AI-assisted work in this repository. Read task-specific documents from the routing table below; do not load every README by default.
 
+## Cover Arts Launcher publishing boundary
+
+Publish Launcher commits, tags, Releases, and firmware assets only to
+`yishan/cover-arts-launcher`. Never publish product changes to `folotoy/ai-passport`
+or infer a destination from the current worktree's `origin`. Before release work,
+read [the release SOP](docs/development/release/launcher-release-sop.md) and run
+`python3 tools/release_preflight.py`. Resume an existing tag/workflow instead of
+recreating it. Documentation/CI-only changes do not require a firmware rebuild.
+
 ## Required AI skills
 
 The following five skills are required for AI-assisted development in this repository:
@@ -59,7 +68,7 @@ retain the separate authorization requirements for flashing, Git writes, and pub
 | Chinese UI text or fonts | `docs/development/engineering/lvgl-chinese-fonts.md`, the application's font assets, configuration, and widget styles |
 | Wi-Fi connection or Bluetooth provisioning | `docs/development/engineering/wifi-provisioning.md`, the referenced `demo/blufi-provisioning` implementation |
 | Build, test, dependencies, partitions | `docs/development/engineering/build-and-test.md`, `docs/development/engineering/firmware-layout.md`, `sdkconfig.defaults`, `partitions.csv` |
-| CI or release | the matching file in `docs/development/ci/CI-*.md` and `.github/workflows/` |
+| CI or release | `docs/development/release/launcher-release-sop.md`, the matching file in `docs/development/ci/CI-*.md`, and `.github/workflows/` |
 | Project completion | `docs/development/release/project-completion.md` (then the `issue-suggestions` or `experience-pr` skill) |
 | Documentation | `docs/contribution/doc-conventions.md`, `docs/README.md` |
 | Commit or PR | `docs/contribution/commit-and-pr.md` |

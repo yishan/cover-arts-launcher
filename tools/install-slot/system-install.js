@@ -1,5 +1,8 @@
-import { parsePartitionTable } from "./extract-app-image.js";
-import { dynamicPartitionEntries, parseDynamicPartitionEntries } from "./dynamic-layout.js";
+import { extractAppImage, parsePartitionTable, verifyEspImage } from "./extract-app-image.js";
+import {
+  DYNAMIC_LEGACY_LAYOUT, DYNAMIC_PLAY_ARENA_END, DYNAMIC_OTADATA_ADDRESS,
+  dynamicPartitionEntries, parseDynamicPartitionEntries, requireDynamicLayout,
+} from "./dynamic-layout.js";
 
 export const COMPATIBLE_PARTITIONS = [
   { name: "nvs", type: 1, subtype: 2, offset: 0x9000, size: 0x6000 },
@@ -20,10 +23,38 @@ const LEGACY_PARTITIONS = [
   { name: "factory", type: 0, subtype: 0, offset: 0x10000, size: 0x7f0000 },
 ];
 
-export const SYSTEM_ERASE_RANGES = [
-  { name: "dynamic_play_arena", address: 0x180000, size: 0x670000 },
-  { name: "otadata", address: 0x7fe000, size: 0x2000 },
-];
+export function systemEraseRanges(layout = DYNAMIC_LEGACY_LAYOUT) {
+  layout = requireDynamicLayout(layout);
+  return [
+    { name: "dynamic_play_arena", address: layout.arenaStart,
+      size: DYNAMIC_PLAY_ARENA_END - layout.arenaStart },
+    { name: "otadata", address: DYNAMIC_OTADATA_ADDRESS, size: 0x2000 },
+  ];
+}
+
+export const SYSTEM_ERASE_RANGES = systemEraseRanges();
+
+/** Validate the incoming layout and Factory before any destructive operation. */
+export async function prepareDynamicSystemImage(input) {
+  const full = input instanceof Uint8Array ? input : new Uint8Array(input);
+  if (full.length < 0x11000 || full.length > 0x800000) {
+    throw new Error("Complete Launcher image has an invalid length.");
+  }
+  const table = parsePartitionTable(full.subarray(0x8000, 0x9000));
+  if (!table.md5Present || !table.md5Valid) throw new Error("Launcher partition MD5 is invalid.");
+  const library = parseDynamicPartitionEntries(table.entries);
+  if (library.slotCount !== 0) throw new Error("System initialization requires an empty play directory.");
+  const factory = extractAppImage(full);
+  if (factory.kind !== "merged" || factory.appOffset !== 0x10000 ||
+      factory.length > library.layout.factorySize) {
+    throw new Error("Factory Launcher does not fit the incoming layout.");
+  }
+  if (await verifyEspImage(factory.data) !== factory.length) {
+    throw new Error("Factory Launcher image length is inconsistent.");
+  }
+  return { entries: table.entries, layout: library.layout, factory,
+    eraseRanges: systemEraseRanges(library.layout) };
+}
 
 function sameEntry(left, right) {
   return left.name === right.name && left.type === right.type && left.subtype === right.subtype &&

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { COVER_PAYLOAD_LENGTH } from "./cover-convert.js";
 import {
+  DYNAMIC_COMPACT_LAYOUT,
   appendDynamicSlot,
   dynamicPartitionEntries,
   planDynamicLibrary,
@@ -64,6 +65,21 @@ function fixture() {
   loader.flash.set(encodePartitionTable(dynamicPartitionEntries(layout.slots)), 0x8000);
   return { loader, layout };
 }
+
+test("compact inventory reads populated plays from the recovered prefix", async () => {
+  const loader = new FlashLoader();
+  const layout = planDynamicLibrary([0x50000, 0x90000], DYNAMIC_COMPACT_LAYOUT);
+  loader.flash.set(encodePartitionTable(dynamicPartitionEntries(layout.slots, DYNAMIC_COMPACT_LAYOUT)), 0x8000);
+  installFixture(loader, layout.slots[0], { generation: 1, title: "玩法一" });
+  installFixture(loader, layout.slots[1], { generation: 2, title: "玩法二" });
+  const inventory = await inspectDynamicLibraryFast(loader);
+  assert.deepEqual(inventory.layout, DYNAMIC_COMPACT_LAYOUT);
+  assert.deepEqual(inventory.slots.map(({ offset, title, state, coverState }) => ({ offset, title, state, coverState })), [
+    { offset: 0x100000, title: "玩法一", state: "ready", coverState: "ready" },
+    { offset: 0x160000, title: "玩法二", state: "ready", coverState: "ready" },
+  ]);
+  assert.ok(loader.reads.every(({ address }) => address === 0x8000 || address >= 0x100000));
+});
 
 test("fast inventory discovers a variable number of plays from the partition table", async () => {
   const { loader, layout } = fixture();

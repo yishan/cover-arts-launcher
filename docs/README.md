@@ -129,7 +129,9 @@ Repository documentation is organized by function area. `authoritative` document
 GitHub community documents: [CONTRIBUTING.md](../.github/CONTRIBUTING.md), [CODE_OF_CONDUCT.md](../.github/CODE_OF_CONDUCT.md), [SECURITY.md](../.github/SECURITY.md), and [SUPPORT.md](../.github/SUPPORT.md).
 
 Cover Arts Launcher public guides: [installation](installation.md),
-[user guide](user-guide.md), [v1.5.0 release notes](releases/v1.5.0.md), and
+[user guide](user-guide.md), [v1.6.0 release notes](releases/v1.6.0.md), and
 [third-party notices](THIRD_PARTY_NOTICES.md).
+
+Launcher maintainers: [release SOP](development/release/launcher-release-sop.md).
 
 > This README describes the product and repository. AI agents must begin with `AGENTS.md` and follow its task-specific routing.

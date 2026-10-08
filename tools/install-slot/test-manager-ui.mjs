@@ -96,6 +96,25 @@ test("append transaction commits the dynamic directory last and keeps the sessio
   assert.match(install, /showPlayCompletion\([\s\S]*?state\.preparedPlay = null;/);
 });
 
+test("readback failure closes only the invalid session and keeps the prepared input", () => {
+  const recovery = app.match(/async function discardFailedReadSession\(error\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
+  assert.match(recovery, /error\.code !== "FLASH_READ_FAILED"/);
+  assert.match(recovery, /await disconnect\(false\)/);
+  assert.doesNotMatch(recovery, /resetToApplication|resetAndDisconnect|eraseRegion|preparedPlay\s*=|clearCoverPreview/);
+  for (const name of ["installPlay", "repairMetadataCover", "eraseSelectedSlot", "installSystem"]) {
+    const flow = app.match(new RegExp(`async function ${name}\\(\\) \\{([\\s\\S]*?)\\n\\}`))?.[1] ?? "";
+    assert.match(flow, /catch \(error\)[\s\S]*await discardFailedReadSession\(error\)/);
+  }
+});
+
+test("installation exposes timed phases and full readback progress before directory commit", () => {
+  const flow = app.match(/async function installPlay\(\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
+  assert.match(app, /performance\.now\(\)/);
+  assert.match(flow, /installPhase\("App 完整读回", \(\) => readAppForVerification/);
+  assert.match(flow, /App 完整读回[\s\S]*sha256\(readback\)[\s\S]*writeDynamicSidecar[\s\S]*tableCommitStarted = true/);
+  assert.match(app, /App 读回校验 \$\{percent\}%/);
+});
+
 test("play session exposes an explicit final reset and clears the previous draft", () => {
   assert.match(html, /id="finish-play-session"[^>]*>完成并重启<\/button>/);
   assert.match(html, /id="install-another"[^>]*>继续安装其他玩法<\/button>/);
@@ -118,6 +137,8 @@ test("continuous installs refresh the stub session without another port picker",
 
 test("deployed manager includes the protected serial transport module", () => {
   assert.match(app, /protectTransportWrites\(new Transport/);
+  const protectedConnections = app.match(/protectTransportReads\(protectTransportWrites\(new Transport\(state\.port, false\)\)\)/g);
+  assert.equal(protectedConnections?.length, 2, "initial and continuous sessions must both use optimized receive");
   assert.match(app, /protectLoaderFlashReads\(new ESPLoader/);
   assert.match(cloudflareBuild, /"serial-transport\.js"/);
 });
@@ -126,6 +147,19 @@ test("manager uses the stable Web Serial baud rate for sustained writes", () => 
   assert.match(app, /const WEB_SERIAL_BAUDRATE = 115200/);
   assert.match(app, /baudrate: WEB_SERIAL_BAUDRATE/);
   assert.doesNotMatch(app, /baudrate:\s*460800/);
+});
+
+test("only complete App readback and SHA verification use the faster rate before sidecar writes", () => {
+  assert.match(app, /const APP_READBACK_BAUDRATE = 230400/);
+  const wrapper = app.match(/async function withAppReadbackRate\(action\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
+  assert.match(wrapper, /withFlashReadBaud\(state\.loader, APP_READBACK_BAUDRATE, action/);
+  assert.match(wrapper, /已恢复写入速率/);
+  const install = app.match(/async function installPlay\(\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
+  assert.match(install, /await withAppReadbackRate\(async \(\) => \{[\s\S]*App 完整读回[\s\S]*App SHA 与结构校验[\s\S]*\n    \}\);\n    log\([\s\S]*writeDynamicSidecar/);
+  const repair = app.match(/async function repairMetadataCover\(\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
+  assert.match(repair, /await withAppReadbackRate\(async \(\) => \{[\s\S]*sha256\(readback\)[\s\S]*\n    \}\);\n    await writeDynamicSidecar/);
+  const system = app.match(/async function installSystem\(\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
+  assert.doesNotMatch(system, /withAppReadbackRate/);
 });
 
 test("images declare dimensions and destructive erase is progressively disclosed", () => {

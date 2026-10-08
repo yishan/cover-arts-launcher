@@ -5,6 +5,23 @@ export const DYNAMIC_PLAY_ARENA_END = 0x7f0000;
 export const DYNAMIC_OTADATA_ADDRESS = 0x7fe000;
 export const DYNAMIC_MAX_SLOTS = 16;
 
+// The default remains legacy for callers that have not inspected a device.
+// Never infer a smaller Factory allocation from a firmware version string.
+export const DYNAMIC_LEGACY_LAYOUT = Object.freeze({
+  id: "dynamic-legacy", factorySize: 0x170000, arenaStart: 0x180000,
+});
+export const DYNAMIC_COMPACT_LAYOUT = Object.freeze({
+  id: "dynamic-compact", factorySize: 0x0f0000, arenaStart: 0x100000,
+});
+
+export function requireDynamicLayout(layout = DYNAMIC_LEGACY_LAYOUT) {
+  const known = [DYNAMIC_LEGACY_LAYOUT, DYNAMIC_COMPACT_LAYOUT].find((candidate) =>
+    candidate.id === layout?.id && candidate.factorySize === layout.factorySize &&
+    candidate.arenaStart === layout.arenaStart);
+  if (!known) throw new Error("Unknown dynamic Launcher layout; inspect the device table first.");
+  return known;
+}
+
 export const DYNAMIC_SYSTEM_PARTITIONS = Object.freeze([
   Object.freeze({ name: "nvs", type: 1, subtype: 2, offset: 0x9000, size: 0x6000 }),
   Object.freeze({ name: "phy_init", type: 1, subtype: 1, offset: 0xf000, size: 0x1000 }),
@@ -28,10 +45,10 @@ export function dynamicSlotAllocationSize(imageLength) {
   return alignDynamicSlotSize(imageLength) + DYNAMIC_SLOT_SIDECAR_SIZE;
 }
 
-function dynamicFreeRanges(slots) {
+function dynamicFreeRanges(slots, layout) {
   const physical = [...slots].sort((left, right) => left.offset - right.offset);
   const ranges = [];
-  let cursor = DYNAMIC_PLAY_ARENA_START;
+  let cursor = layout.arenaStart;
   for (const slot of physical) {
     if (slot.offset > cursor) ranges.push({ offset: cursor, size: slot.offset - cursor });
     cursor = slot.offset + slot.size;
@@ -42,14 +59,18 @@ function dynamicFreeRanges(slots) {
   return ranges;
 }
 
-function dynamicLayoutState(slots) {
-  const freeRanges = dynamicFreeRanges(slots);
+function dynamicLayoutState(slots, layout) {
+  const freeRanges = dynamicFreeRanges(slots, layout);
   const remainingBytes = freeRanges.reduce((total, range) => total + range.size, 0);
   const largestFreeRange = freeRanges.reduce((largest, range) =>
     range.size > (largest?.size ?? 0) ? range : largest, null);
   const nextOffset = slots.reduce((end, slot) => Math.max(end, slot.offset + slot.size),
-    DYNAMIC_PLAY_ARENA_START);
+    layout.arenaStart);
   return {
+    layout,
+    arenaStart: layout.arenaStart,
+    arenaEnd: DYNAMIC_PLAY_ARENA_END,
+    arenaBytes: DYNAMIC_PLAY_ARENA_END - layout.arenaStart,
     nextOffset,
     remainingBytes,
     largestFreeRange: largestFreeRange ? { ...largestFreeRange } : null,
@@ -58,7 +79,8 @@ function dynamicLayoutState(slots) {
   };
 }
 
-export function validateDynamicSlots(slots) {
+export function validateDynamicSlots(slots, layout = DYNAMIC_LEGACY_LAYOUT) {
+  layout = requireDynamicLayout(layout);
   if (!Array.isArray(slots)) throw new Error("Dynamic slots must be an array.");
   if (slots.length > DYNAMIC_MAX_SLOTS) throw new Error("Dynamic layout exceeds 16 OTA slots.");
 
@@ -69,7 +91,7 @@ export function validateDynamicSlots(slots) {
       throw new Error(`Dynamic slot ${index + 1} identity is not contiguous.`);
     }
     if (!Number.isSafeInteger(slot.offset) || slot.offset % DYNAMIC_SLOT_ALIGNMENT !== 0 ||
-        slot.offset < DYNAMIC_PLAY_ARENA_START) {
+        slot.offset < layout.arenaStart) {
       throw new Error(`Dynamic slot ${index + 1} offset is not play-arena aligned.`);
     }
     if (!Number.isSafeInteger(slot.imageLength) || slot.imageLength <= 0 ||
@@ -89,11 +111,11 @@ export function validateDynamicSlots(slots) {
       throw new Error("Dynamic slot allocations overlap.");
     }
   }
-  return dynamicLayoutState(slots);
+  return dynamicLayoutState(slots, layout);
 }
 
-export function appendDynamicSlot(slots, imageLength) {
-  const state = validateDynamicSlots(slots);
+export function appendDynamicSlot(slots, imageLength, layout = DYNAMIC_LEGACY_LAYOUT) {
+  const state = validateDynamicSlots(slots, layout);
   if (slots.length >= DYNAMIC_MAX_SLOTS) {
     throw new Error("The ESP-IDF OTA slot limit of 16 has been reached.");
   }
@@ -125,12 +147,12 @@ export function appendDynamicSlot(slots, imageLength) {
     sidecarSize: DYNAMIC_SLOT_SIDECAR_SIZE,
   };
   const nextSlots = [...slots, slot];
-  const nextState = validateDynamicSlots(nextSlots);
+  const nextState = validateDynamicSlots(nextSlots, layout);
   return { slot, slots: nextSlots, ...nextState };
 }
 
-export function removeDynamicSlot(slots, slotId) {
-  validateDynamicSlots(slots);
+export function removeDynamicSlot(slots, slotId, layout = DYNAMIC_LEGACY_LAYOUT) {
+  validateDynamicSlots(slots, layout);
   if (!Number.isInteger(slotId) || slotId < 0 || slotId >= slots.length) {
     throw new Error("Dynamic slot removal target is invalid.");
   }
@@ -144,7 +166,7 @@ export function removeDynamicSlot(slots, slotId) {
       label: `ota_${nextSlotId}`,
       subtype: 0x10 + nextSlotId,
     }));
-  const state = validateDynamicSlots(nextSlots);
+  const state = validateDynamicSlots(nextSlots, layout);
   return {
     removedSlot,
     slots: nextSlots,
@@ -153,28 +175,31 @@ export function removeDynamicSlot(slots, slotId) {
   };
 }
 
-export function planDynamicLibrary(imageLengths) {
+export function planDynamicLibrary(imageLengths, layout = DYNAMIC_LEGACY_LAYOUT) {
   if (!Array.isArray(imageLengths)) throw new Error("App image lengths must be an array.");
   let slots = [];
-  let result = validateDynamicSlots(slots);
+  let result = validateDynamicSlots(slots, layout);
   for (const imageLength of imageLengths) {
-    result = appendDynamicSlot(slots, imageLength);
+    result = appendDynamicSlot(slots, imageLength, layout);
     slots = result.slots;
   }
-  return { slots, nextOffset: result.nextOffset, remainingBytes: result.remainingBytes };
+  return { ...result, slots };
 }
 
-export function largestDynamicImage(slots) {
-  const { largestFreeRange } = validateDynamicSlots(slots);
+export function largestDynamicImage(slots, layout = DYNAMIC_LEGACY_LAYOUT) {
+  const { largestFreeRange } = validateDynamicSlots(slots, layout);
   return (largestFreeRange?.size ?? 0) > DYNAMIC_SLOT_SIDECAR_SIZE
     ? largestFreeRange.size - DYNAMIC_SLOT_SIDECAR_SIZE
     : 0;
 }
 
-export function dynamicPartitionEntries(slots) {
-  validateDynamicSlots(slots);
+export function dynamicPartitionEntries(slots, layout = DYNAMIC_LEGACY_LAYOUT) {
+  layout = requireDynamicLayout(layout);
+  validateDynamicSlots(slots, layout);
   return [
-    ...DYNAMIC_SYSTEM_PARTITIONS.map((entry) => ({ ...entry })),
+    ...DYNAMIC_SYSTEM_PARTITIONS.map((entry) => ({
+      ...entry, ...(entry.name === "factory" ? { size: layout.factorySize } : {}),
+    })),
     ...slots.map(({ label: name, type, subtype, offset, size }) => ({
       name, type, subtype, offset, size,
     })),
@@ -191,7 +216,7 @@ export function dynamicPartitionEntries(slots) {
 function samePartition(left, right) {
   return left?.name === right.name && left.type === right.type &&
     left.subtype === right.subtype && left.offset === right.offset &&
-    left.size === right.size;
+    left.size === right.size && (left.flags ?? 0) === 0;
 }
 
 export function parseDynamicPartitionEntries(entries) {
@@ -199,8 +224,14 @@ export function parseDynamicPartitionEntries(entries) {
   if (entries.length < DYNAMIC_SYSTEM_PARTITIONS.length + 1) {
     throw new Error("Dynamic partition table is incomplete.");
   }
+  const factory = entries[2];
+  const layout = [DYNAMIC_LEGACY_LAYOUT, DYNAMIC_COMPACT_LAYOUT].find((candidate) =>
+    factory?.size === candidate.factorySize);
+  if (!layout) throw new Error("Dynamic Factory size is not a reviewed Launcher layout.");
   for (let index = 0; index < DYNAMIC_SYSTEM_PARTITIONS.length; index++) {
-    if (!samePartition(entries[index], DYNAMIC_SYSTEM_PARTITIONS[index])) {
+    const expected = { ...DYNAMIC_SYSTEM_PARTITIONS[index] };
+    if (expected.name === "factory") expected.size = layout.factorySize;
+    if (!samePartition(entries[index], expected)) {
       throw new Error(`Dynamic system partition ${index + 1} does not match the v0.3 contract.`);
     }
   }
@@ -214,10 +245,11 @@ export function parseDynamicPartitionEntries(entries) {
   if (appEntries.length > DYNAMIC_MAX_SLOTS) throw new Error("Dynamic layout exceeds 16 OTA slots.");
   const slots = appEntries.map((entry, slotId) => {
     if (entry.name !== `ota_${slotId}` || entry.type !== 0 ||
-        entry.subtype !== 0x10 + slotId) {
+        entry.subtype !== 0x10 + slotId || (entry.flags ?? 0) !== 0) {
       throw new Error(`Dynamic partition position ${slotId + 1} is not contiguous.`);
     }
-    if (entry.offset < DYNAMIC_PLAY_ARENA_START ||
+    if (!Number.isSafeInteger(entry.offset) || !Number.isSafeInteger(entry.size) ||
+        entry.offset < layout.arenaStart ||
         entry.offset % DYNAMIC_SLOT_ALIGNMENT !== 0 ||
         entry.size < DYNAMIC_SLOT_ALIGNMENT * 2 ||
         entry.size % DYNAMIC_SLOT_ALIGNMENT !== 0) {
@@ -244,15 +276,15 @@ export function parseDynamicPartitionEntries(entries) {
       throw new Error("Dynamic partition allocations overlap.");
     }
   }
-  const state = dynamicLayoutState(slots);
+  const state = dynamicLayoutState(slots, layout);
   return {
     slots,
     ...state,
   };
 }
 
-export function createDynamicAppendSession(slots, imageLength) {
-  const plan = appendDynamicSlot(slots, imageLength);
+export function createDynamicAppendSession(slots, imageLength, layout = DYNAMIC_LEGACY_LAYOUT) {
+  const plan = appendDynamicSlot(slots, imageLength, layout);
   return {
     phase: "planned",
     committed: false,

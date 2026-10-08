@@ -31,7 +31,7 @@ DEFAULT_APP_SIZE = VERIFY.FLASH_SIZE - DEFAULT_APP_OFFSET
 LAUNCHER_PARTITIONS = (
     ("nvs", "data", "nvs", 0x9000, 0x6000),
     ("phy_init", "data", "phy", 0xF000, 0x1000),
-    ("factory", "app", "factory", 0x10000, 0x170000),
+    ("factory", "app", "factory", 0x10000, 0x0F0000),
     ("otadata", "data", "ota", 0x7FE000, 0x2000),
 )
 

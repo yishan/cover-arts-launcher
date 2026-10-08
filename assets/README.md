@@ -24,6 +24,10 @@ Store reusable font files and generated font sources in `fonts/`.
 full-width forms, and all 3,755 GB2312 level-one common Simplified Chinese
 characters. Unsupported rare characters use LVGL's placeholder glyph.
 
+The bitmap uses lossless LVGL compression with prefiltering; keep
+`CONFIG_LV_USE_FONT_COMPRESSED=y` and the corresponding host-preview setting.
+Character coverage, 2 bpp quantization, and layout metrics are unchanged.
+
 The source face is the Source Han Sans SC font pinned with LVGL 9.5.0 under
 `managed_components/lvgl__lvgl/scripts/built_in_font/`, licensed under SIL Open
 Font License 1.1. Regenerate the C source with `lv_font_conv` 1.5.3:

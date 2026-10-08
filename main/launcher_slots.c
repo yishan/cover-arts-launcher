@@ -33,13 +33,27 @@ static void copy_fixed_string(char *destination, size_t destination_size,
 const esp_partition_t *launcher_slots_partition(size_t slot_id)
 {
     esp_partition_subtype_t subtype;
+    const esp_partition_t *partition;
 
     if (slot_id >= LAUNCHER_MAX_SLOTS) {
         return NULL;
     }
     subtype = (esp_partition_subtype_t)(ESP_PARTITION_SUBTYPE_APP_OTA_0 +
                                         slot_id);
-    return esp_partition_find_first(ESP_PARTITION_TYPE_APP, subtype, NULL);
+    partition = esp_partition_find_first(ESP_PARTITION_TYPE_APP, subtype, NULL);
+    if (partition != NULL && launcher_slots_dynamic_layout()) {
+        const esp_partition_t *factory = esp_partition_find_first(
+            ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_FACTORY, NULL);
+        uint32_t arena_start;
+        if (factory == NULL || !launcher_dynamic_arena_start(
+                factory->address, factory->size, &arena_start) ||
+            !launcher_dynamic_allocation_valid(arena_start,
+                                               partition->address,
+                                               partition->size)) {
+            return NULL;
+        }
+    }
+    return partition;
 }
 
 size_t launcher_slots_count(void)

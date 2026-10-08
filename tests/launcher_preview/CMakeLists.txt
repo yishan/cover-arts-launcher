@@ -26,3 +26,18 @@ add_executable(
 target_include_directories(launcher_preview PRIVATE ../../main)
 target_compile_options(launcher_preview PRIVATE -Wall -Wextra -Werror -UNDEBUG)
 target_link_libraries(launcher_preview PRIVATE lvgl_host m)
+
+# Supply an uncompressed reference without vendoring a duplicate large font.
+if(LAUNCHER_REFERENCE_FONT)
+    add_library(launcher_font_reference OBJECT "${LAUNCHER_REFERENCE_FONT}")
+    target_link_libraries(launcher_font_reference PRIVATE lvgl_host)
+    target_compile_definitions(launcher_font_reference PRIVATE
+        launcher_font_16_gb2312=launcher_font_uncompressed_reference)
+    add_executable(launcher_font_equivalence
+        font_equivalence.c
+        ../../assets/fonts/launcher_source_han_sans_sc_16_gb2312.c
+        $<TARGET_OBJECTS:launcher_font_reference>)
+    target_compile_options(launcher_font_equivalence PRIVATE
+        -Wall -Wextra -Werror -UNDEBUG)
+    target_link_libraries(launcher_font_equivalence PRIVATE lvgl_host m)
+endif()
