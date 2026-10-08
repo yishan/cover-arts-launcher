@@ -22,11 +22,11 @@ npm ci
 npm start
 ```
 
-打开 `http://127.0.0.1:4173`。工具和随附的浏览器依赖均在本地运行。代理只接受官方玩法详情/API URL，以及官方 `/api/` 固件或图片资源，不是通用代理。
+打开 `http://127.0.0.1:4173`。工具和随附的浏览器依赖均在本地运行。代理只接受官方玩法详情/API URL、按名称或分类发起的目录查询，以及官方 `/api/` 固件或图片资源，不是通用代理。
 
 ## 部署到 Vercel
 
-将此目录作为 Vercel 项目根目录部署。`index.html` 与内置浏览器运行时作为静态文件提供；`/api/play` 和 `/api/resource` 由 Vercel Functions 提供，并沿用本地服务的白名单：只接受官方 AI Passport Play URL 与官方 `/api/` 资源，拒绝跨域重定向，也不会成为通用代理。
+将此目录作为 Vercel 项目根目录部署。`index.html` 与内置浏览器运行时作为静态文件提供；`/api/catalog`、`/api/play` 和 `/api/resource` 由 Vercel Functions 提供，并沿用本地服务的白名单：只接受官方玩法目录查询、官方 AI Passport Play URL 与官方 `/api/` 资源，拒绝跨域重定向，也不会成为通用代理。
 
 部署后的页面必须在桌面 Chrome 或 Edge 中通过 HTTPS 打开才能使用 Web Serial；Vercel 会自动提供 HTTPS。预览部署在提升到生产域名前，应使用官方玩法 URL 与真机连接完成验证。
 
@@ -61,7 +61,7 @@ npm run deploy:cloudflare
 
 ## 动态玩法安装
 
-玩法来源可以是官方玩法详情/API URL，也可以是本地 `.bin`。官方路径从公开 API 取得 `downloadUrl`、`firmwareSha256`、身份、标题、版本和封面信息，先验证下载文件再提取。本地文件可以填写预期 SHA；留空时以本地文件计算值为准。
+玩法来源可以从官方玩法库按名称或分类浏览并选择，也可以填写官方玩法详情/API URL，或选择本地 `.bin`。目录卡片展示发布封面、名称、作者、分类和固件大小；选择卡片后复用同一条官方下载与校验链路。作者名称当前只展示，不作为搜索条件。官方路径从公开 API 取得 `downloadUrl`、`firmwareSha256`、身份、标题、版本和封面信息，先验证下载文件再提取。本地文件可以填写预期 SHA；留空时以本地文件计算值为准。
 
 官方来源的身份按 `play:<projectId>` 保存；标题优先使用中文，版本优先使用 `shareVersion`。从官方 URL 读取完成后，页面会同时展示标题、版本、Source ID 和封面。
 

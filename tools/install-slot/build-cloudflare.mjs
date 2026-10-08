@@ -19,6 +19,7 @@ const publicFiles = [
   "favicon.svg",
   "index.html",
   "play-source.js",
+  "play-catalog.js",
   "serial-transport.js",
   "slot-inspector.js",
   "slot-install.js",

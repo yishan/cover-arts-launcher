@@ -58,7 +58,8 @@ to reinstall plays, save needed data, and read the
 ## Use the play library
 
 1. Open the [Play Manager](https://calm.yishan.app/) and connect the device.
-2. Import an official Play URL or select a local compatible `.bin` file.
+2. Search the official catalog by play title, browse by category and select a
+   card, or use an official Play URL or a local compatible `.bin` file.
 3. Review the detected title, version, source ID, firmware hash, and cover.
 4. Install one or more plays. v1.6.0 appends them in logical order and first
    reuses the smallest released range that fits.

@@ -36,6 +36,25 @@ test("manager exposes semantic task and source tabs", () => {
   assert.match(app, /enableArrowKeyTabs\("\[data-source\]"/);
 });
 
+test("official source supports title search, category browsing, and accessible card selection", () => {
+  assert.match(html, /<label class="field catalog-search-field" for="catalog-search">/);
+  assert.match(html, /id="catalog-search"[^>]+name="catalog_query"[^>]+type="search"[^>]+autocomplete="off"/);
+  assert.match(html, /placeholder="搜索玩法名称…"/);
+  assert.match(html, /id="catalog-categories"[^>]+role="tablist"[^>]+aria-label="玩法分类"/);
+  assert.match(html, /id="catalog-status"[^>]+role="status"[^>]+aria-live="polite"/);
+  assert.match(html, /id="catalog-results"[^>]+role="list"/);
+  assert.match(html, /id="catalog-load-more"[^>]*>加载更多玩法<\/button>/);
+  assert.doesNotMatch(html, /搜索作者|作者搜索/);
+  assert.match(app, /normalizeOfficialCatalog/);
+  assert.match(app, /managerApiUrl\(`\/api\/catalog\?/);
+  assert.match(app, /card\.type = "button"/);
+  assert.match(app, /card\.setAttribute\("aria-label"/);
+  assert.match(app, /selectCatalogPlay/);
+  assert.match(app, /catalogQueryTimer = window\.setTimeout/);
+  assert.match(css, /\.catalog-card:focus-visible/);
+  assert.match(css, /@media \(max-width: 620px\)[\s\S]*\.catalog-grid/);
+});
+
 test("system installation begins with the official Launcher discovery step", () => {
   assert.match(html, /<span class="step-index"[^>]*>01<\/span>[\s\S]*?从官网获取启动器/);
   assert.match(html, /id="launcher-store-link"[^>]+aria-disabled="true"[^>]*>Cover-Arts 启动器<\/a>/);
@@ -142,6 +161,7 @@ test("deployed manager includes the protected serial transport module", () => {
   assert.equal(protectedConnections?.length, 2, "initial and continuous sessions must both use optimized receive");
   assert.match(app, /protectLoaderFlashReads\(new ESPLoader/);
   assert.match(cloudflareBuild, /"serial-transport\.js"/);
+  assert.match(cloudflareBuild, /"play-catalog\.js"/);
 });
 
 test("Cloudflare bundle includes the v1.5 manager support modules", () => {
@@ -156,6 +176,7 @@ test("Cloudflare bundle includes the v1.5 manager support modules", () => {
 });
 
 test("Vercel deploy excludes duplicate module API shims", () => {
+  assert.match(vercelIgnore, /^api\/catalog\.mjs$/m);
   assert.match(vercelIgnore, /^api\/play\.mjs$/m);
   assert.match(vercelIgnore, /^api\/resource\.mjs$/m);
 });

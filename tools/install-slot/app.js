@@ -5,6 +5,7 @@ import { encodePartitionTable, espImageLength, extractAppImage, parsePartitionTa
 import { resetAndDisconnect, resetToApplication } from "./device-reset.js";
 import { protectLoaderFlashReads, protectTransportReads, protectTransportWrites, withFlashReadBaud } from "./serial-transport.js";
 import { managerApiUrl, normalizeOfficialPlay } from "./play-source.js";
+import { PLAY_CATEGORIES, normalizeOfficialCatalog } from "./play-catalog.js";
 import { inspectLauncherTitle, requireLauncherTitle } from "./title-font.js";
 import {
   appendDynamicSlot,
@@ -41,7 +42,21 @@ const state = {
   coverPreviewUrl: null,
   busy: false,
   coverBusy: false,
+  catalogSelecting: false,
 };
+
+const catalog = {
+  query: "",
+  category: "all",
+  plays: [],
+  total: 0,
+  hasMore: false,
+  categoryCounts: {},
+  loading: false,
+  selectedId: null,
+  requestId: 0,
+};
+let catalogQueryTimer = 0;
 
 const terminal = {
   clean() {},
@@ -605,6 +620,201 @@ async function preparePlay(bytes, metadata, expectedSha = "") {
   $("#image-info").textContent = `${extracted.kind === "merged" ? "已从合并镜像提取" : "App 镜像"} · ${extracted.length} bytes · App SHA-256 ${state.preparedPlay.appSha}`;
   applyRecommendation();
   refreshActions();
+}
+
+function catalogCategoryLabel(key) {
+  return PLAY_CATEGORIES.find((category) => category.key === key)?.label ?? "全部玩法";
+}
+
+function updateCatalogUrlState() {
+  const url = new URL(window.location.href);
+  if (catalog.query) url.searchParams.set("play_q", catalog.query);
+  else url.searchParams.delete("play_q");
+  if (catalog.category !== "all") url.searchParams.set("play_category", catalog.category);
+  else url.searchParams.delete("play_category");
+  history.replaceState(null, "", url);
+}
+
+function catalogCoverProxyUrl(value) {
+  if (!value) return "";
+  return managerApiUrl(`/api/resource?url=${encodeURIComponent(value)}`);
+}
+
+function renderCatalogCategories() {
+  const container = $("#catalog-categories");
+  container.replaceChildren();
+  for (const category of PLAY_CATEGORIES) {
+    const button = document.createElement("button");
+    const selected = category.key === catalog.category;
+    const count = category.key === "all" ? catalog.total : catalog.categoryCounts[category.key];
+    button.type = "button";
+    button.className = "catalog-category";
+    button.dataset.catalogCategory = category.key;
+    button.setAttribute("role", "tab");
+    button.setAttribute("aria-controls", "catalog-results");
+    button.setAttribute("aria-selected", String(selected));
+    button.tabIndex = selected ? 0 : -1;
+    button.textContent = Number.isSafeInteger(count) ? `${category.label} ${count}` : category.label;
+    button.addEventListener("click", () => {
+      if (catalog.loading || category.key === catalog.category) return;
+      catalog.category = category.key;
+      catalog.selectedId = null;
+      updateCatalogUrlState();
+      renderCatalogCategories();
+      loadCatalog();
+    });
+    button.addEventListener("keydown", (event) => {
+      const tabs = [...container.querySelectorAll("[role=tab]")];
+      const current = tabs.indexOf(button);
+      let next = null;
+      if (["ArrowRight", "ArrowDown"].includes(event.key)) next = (current + 1) % tabs.length;
+      if (["ArrowLeft", "ArrowUp"].includes(event.key)) next = (current - 1 + tabs.length) % tabs.length;
+      if (event.key === "Home") next = 0;
+      if (event.key === "End") next = tabs.length - 1;
+      if (next === null) return;
+      event.preventDefault();
+      tabs[next].click();
+      tabs[next].focus();
+    });
+    container.append(button);
+  }
+}
+
+function renderCatalogResults(message = "") {
+  const results = $("#catalog-results");
+  results.replaceChildren();
+  results.setAttribute("aria-busy", String(catalog.loading));
+  $("#catalog-load-more").hidden = !catalog.hasMore || catalog.loading;
+  $("#catalog-load-more").disabled = catalog.loading || state.catalogSelecting;
+
+  if (message || (!catalog.loading && catalog.plays.length === 0)) {
+    const empty = document.createElement("li");
+    empty.className = "catalog-empty";
+    empty.textContent = message || "没有找到符合条件的玩法。可换一个名称或分类。";
+    results.append(empty);
+    return;
+  }
+
+  for (const play of catalog.plays) {
+    const item = document.createElement("li");
+    item.className = "catalog-item";
+    const card = document.createElement("button");
+    const selected = play.playId === catalog.selectedId;
+    card.type = "button";
+    card.className = "catalog-card";
+    card.setAttribute("aria-label", `选择玩法：${play.title}，${play.author}`);
+    card.setAttribute("aria-pressed", String(selected));
+    card.disabled = catalog.loading || state.catalogSelecting;
+
+    const art = document.createElement("span");
+    art.className = "catalog-card-art";
+    if (play.coverUrl) {
+      const image = document.createElement("img");
+      image.src = catalogCoverProxyUrl(play.coverUrl);
+      image.alt = "";
+      image.width = 72;
+      image.height = 96;
+      image.loading = "lazy";
+      image.decoding = "async";
+      image.addEventListener("error", () => { art.classList.add("is-fallback"); image.remove(); }, { once: true });
+      art.append(image);
+    } else {
+      art.classList.add("is-fallback");
+    }
+
+    const copy = document.createElement("span");
+    copy.className = "catalog-card-copy";
+    const title = document.createElement("strong");
+    title.textContent = play.title;
+    const author = document.createElement("span");
+    author.className = "catalog-card-author";
+    author.textContent = play.author;
+    const meta = document.createElement("span");
+    meta.className = "catalog-card-meta";
+    meta.textContent = play.firmwareSize > 0
+      ? `${play.categoryLabel} · ${formatBytes(play.firmwareSize)}`
+      : play.categoryLabel;
+    const action = document.createElement("span");
+    action.className = "catalog-card-action";
+    action.textContent = selected ? "已选择" : "选择玩法";
+    copy.append(title, author, meta, action);
+    card.append(art, copy);
+    card.addEventListener("click", () => selectCatalogPlay(play));
+    item.append(card);
+    results.append(item);
+  }
+}
+
+async function loadCatalog({ append = false } = {}) {
+  const requestId = ++catalog.requestId;
+  const offset = append ? catalog.plays.length : 0;
+  let resultMessage = "";
+  catalog.loading = true;
+  $("#catalog-status").textContent = append ? "正在加载更多玩法…" : "正在读取官方玩法…";
+  renderCatalogCategories();
+  renderCatalogResults(append ? "" : "正在读取玩法列表…");
+  try {
+    const parameters = new URLSearchParams({
+      q: catalog.query,
+      category: catalog.category,
+      limit: "12",
+      offset: String(offset),
+    });
+    const response = await fetch(managerApiUrl(`/api/catalog?${parameters}`), { cache: "no-store" });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error ?? `HTTP ${response.status}`);
+    const normalized = normalizeOfficialCatalog(payload);
+    if (requestId !== catalog.requestId) return;
+    catalog.plays = append ? [...catalog.plays, ...normalized.plays] : normalized.plays;
+    catalog.total = normalized.total;
+    catalog.hasMore = normalized.hasMore;
+    catalog.categoryCounts = normalized.categoryCounts;
+    const context = catalog.query
+      ? `“${catalog.query}”`
+      : catalog.category === "all" ? "官方玩法库" : catalogCategoryLabel(catalog.category);
+    $("#catalog-status").textContent = `${context} · 找到 ${catalog.total} 款玩法`;
+  } catch (error) {
+    if (requestId !== catalog.requestId) return;
+    if (!append) catalog.plays = [];
+    catalog.hasMore = false;
+    $("#catalog-status").textContent = `无法读取玩法库：${error.message}`;
+    if (catalog.plays.length === 0) {
+      resultMessage = "玩法库暂时不可用。可稍后重试，或在下方粘贴官方 Play 详情 URL。";
+    }
+  } finally {
+    if (requestId === catalog.requestId) {
+      catalog.loading = false;
+      renderCatalogCategories();
+      renderCatalogResults(resultMessage);
+    }
+  }
+}
+
+async function selectCatalogPlay(play) {
+  if (state.catalogSelecting) return;
+  catalog.selectedId = play.playId;
+  state.catalogSelecting = true;
+  $("#play-url").value = play.detailUrl;
+  $("#catalog-status").textContent = `正在准备「${play.title}」…`;
+  renderCatalogResults();
+  try {
+    await resolvePlayUrl();
+    $("#catalog-status").textContent = state.preparedPlay
+      ? `已选择「${play.title}」，请继续确认封面与安装位置。`
+      : `未能准备「${play.title}」，请查看下方错误信息。`;
+  } finally {
+    state.catalogSelecting = false;
+    renderCatalogResults();
+  }
+}
+
+function scheduleCatalogSearch() {
+  window.clearTimeout(catalogQueryTimer);
+  catalog.query = $("#catalog-search").value.trim();
+  catalog.selectedId = null;
+  updateCatalogUrlState();
+  $("#catalog-status").textContent = catalog.query ? "等待输入完成…" : "正在恢复全部玩法…";
+  catalogQueryTimer = window.setTimeout(() => loadCatalog(), 350);
 }
 
 async function resolvePlayUrl() {
@@ -1193,6 +1403,8 @@ $("#connect").addEventListener("click", () => connect().catch((error) => setResu
 $("#disconnect").addEventListener("click", disconnectToApplication);
 $("#install-system").addEventListener("click", installSystem);
 $("#resolve-play").addEventListener("click", resolvePlayUrl);
+$("#catalog-search").addEventListener("input", scheduleCatalogSearch);
+$("#catalog-load-more").addEventListener("click", () => loadCatalog({ append: true }));
 $("#play-file").addEventListener("change", prepareLocalFile);
 $("#cover-file").addEventListener("change", handleCoverFileChange);
 $("#install-play").addEventListener("click", installPlay);
@@ -1221,7 +1433,13 @@ window.addEventListener("beforeunload", () => {
 const initialUrl = new URL(window.location.href);
 const initialMode = initialUrl.searchParams.get("mode");
 const initialSource = initialUrl.searchParams.get("source");
+const initialCatalogCategory = initialUrl.searchParams.get("play_category");
+catalog.query = (initialUrl.searchParams.get("play_q") ?? "").slice(0, 120).trim();
+catalog.category = PLAY_CATEGORIES.some(({ key }) => key === initialCatalogCategory) ? initialCatalogCategory : "all";
+$("#catalog-search").value = catalog.query;
 selectMode(initialMode === "system" ? "system" : "play", false);
 selectSource(initialSource === "local" ? "local" : "play", false);
+renderCatalogCategories();
+loadCatalog();
 renderSlots();
 refreshActions();

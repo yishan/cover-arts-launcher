@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import catalogHandler from "./api/catalog.js";
 import playHandler from "./api/play.js";
 import resourceHandler from "./api/resource.js";
 import { officialResourceUrl } from "./lib/official-proxy.js";
@@ -53,6 +54,37 @@ test("Vercel Play function maps an official detail URL to the public API", async
   }
 });
 
+test("Vercel catalog function forwards normalized title and category filters", async () => {
+  const originalFetch = globalThis.fetch;
+  let requested = "";
+  globalThis.fetch = async (target) => {
+    requested = String(target);
+    const body = new TextEncoder().encode('{"ok":true,"plays":[],"pagination":{"total":0,"hasMore":false}}');
+    return {
+      ok: true,
+      status: 200,
+      url: requested,
+      headers: new Headers({ "content-type": "application/json" }),
+      arrayBuffer: async () => body.buffer,
+    };
+  };
+  try {
+    const response = responseRecorder();
+    await catalogHandler({
+      method: "GET",
+      url: "/api/catalog?q=flag&category=games&limit=12&offset=0&url=https%3A%2F%2Fexample.com",
+      headers: { host: "preview.vercel.app" },
+    }, response);
+    assert.equal(
+      requested,
+      "https://ai-passport.folotoy.cn/api/plays?tag=&bootstrap=true&q=flag&category=games&sort=relevance&period=all&limit=12&offset=0",
+    );
+    assert.equal(response.statusCode, 200);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("Vercel resource function fails closed for an external target", async () => {
   const response = responseRecorder();
   await resourceHandler({
@@ -69,4 +101,7 @@ test("Vercel functions reject non-GET methods", async () => {
   await playHandler({ method: "POST", url: "/api/play", headers: { host: "preview.vercel.app" } }, response);
   assert.equal(response.statusCode, 405);
   assert.equal(response.headers.get("allow"), "GET");
+  const catalogResponse = responseRecorder();
+  await catalogHandler({ method: "POST", url: "/api/catalog", headers: { host: "preview.vercel.app" } }, catalogResponse);
+  assert.equal(catalogResponse.statusCode, 405);
 });

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { onRequest as catalogHandler } from "./functions/api/catalog.js";
 import { onRequest as playHandler } from "./functions/api/play.js";
 import { onRequest as resourceHandler } from "./functions/api/resource.js";
 
@@ -38,6 +39,40 @@ test("Cloudflare Play function maps an official detail URL to the public API", a
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("Cloudflare catalog function forwards only normalized title and category filters", async () => {
+  const originalFetch = globalThis.fetch;
+  let requested = "";
+  globalThis.fetch = async (target) => {
+    requested = String(target);
+    return upstreamResponse('{"ok":true,"plays":[],"pagination":{"total":0,"hasMore":false}}', {
+      url: requested,
+      contentType: "application/json",
+    });
+  };
+  try {
+    const response = await catalogHandler({
+      request: new Request(
+        "https://cover-arts-launcher.pages.dev/api/catalog?q=flag&category=games&limit=12&offset=0&url=https://example.com",
+      ),
+    });
+    assert.equal(
+      requested,
+      "https://ai-passport.folotoy.cn/api/plays?tag=&bootstrap=true&q=flag&category=games&sort=relevance&period=all&limit=12&offset=0",
+    );
+    assert.equal(response.status, 200);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Cloudflare catalog function rejects unsupported categories", async () => {
+  const response = await catalogHandler({
+    request: new Request("https://cover-arts-launcher.pages.dev/api/catalog?category=external"),
+  });
+  assert.equal(response.status, 400);
+  assert.match(await response.text(), /category/i);
 });
 
 test("Cloudflare resource function streams official API assets", async () => {
@@ -112,4 +147,8 @@ test("Cloudflare functions reject non-GET methods", async () => {
   });
   assert.equal(response.status, 405);
   assert.equal(response.headers.get("allow"), "GET");
+  const catalogResponse = await catalogHandler({
+    request: new Request("https://cover-arts-launcher.pages.dev/api/catalog", { method: "POST" }),
+  });
+  assert.equal(catalogResponse.status, 405);
 });

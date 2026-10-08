@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { OFFICIAL_PLAY_ORIGIN, officialPlayApiPath } from "./play-source.js";
+import { officialPlayCatalogApiPath } from "./play-catalog.js";
 import { officialResourceUrl, proxyOfficial } from "./lib/official-proxy.js";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
@@ -27,6 +28,21 @@ async function handle(request, response) {
   try {
     if (requestUrl.pathname === "/api/play") {
       await proxyOfficial(response, playApiUrl(requestUrl.searchParams.get("url") ?? ""), { json: true });
+      return;
+    }
+    if (requestUrl.pathname === "/api/catalog") {
+      if (request.method !== "GET") {
+        response.writeHead(405, { allow: "GET", "content-type": "application/json; charset=utf-8" });
+        response.end(JSON.stringify({ error: "Method not allowed." }));
+        return;
+      }
+      const target = new URL(officialPlayCatalogApiPath({
+        query: requestUrl.searchParams.get("q") ?? "",
+        category: requestUrl.searchParams.get("category") ?? "all",
+        limit: requestUrl.searchParams.get("limit") ?? 12,
+        offset: requestUrl.searchParams.get("offset") ?? 0,
+      }), officialOrigin);
+      await proxyOfficial(response, target, { json: true });
       return;
     }
     if (requestUrl.pathname === "/api/resource") {

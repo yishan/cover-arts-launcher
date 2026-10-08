@@ -31,14 +31,15 @@ npm start
 ```
 
 Open `http://127.0.0.1:4173`. The tool and vendored browser dependencies run
-locally. The proxy accepts only official Play detail/API URLs and official
-`/api/` firmware or image resources; it is not a general-purpose proxy.
+locally. The proxy accepts only official Play detail/API URLs, catalog queries
+by title/category, and official `/api/` firmware or image resources; it is not
+a general-purpose proxy.
 
 ## Deploy to Vercel
 
 Deploy this directory as the Vercel project root. `index.html` and the vendored
-browser runtime are served as static files. `/api/play` and `/api/resource` are
-Vercel Functions with the same allowlist as the loopback server: they accept
+browser runtime are served as static files. `/api/catalog`, `/api/play`, and
+`/api/resource` are Vercel Functions with the same allowlist as the loopback server: they accept
 only official AI Passport Play URLs and official `/api/` resources, reject
 cross-origin redirects, and never act as a general-purpose proxy.
 
@@ -109,8 +110,12 @@ library as equal outcomes.
 
 ## Dynamic play installation
 
-A play can come from an official Play detail/API URL or a local `.bin`. The
-official path obtains `downloadUrl`, `firmwareSha256`, identity, title, version,
+A play can be selected from the official catalog by title or category, entered
+as an official Play detail/API URL, or loaded from a local `.bin`. Catalog cards
+show the published cover, title, author, category, and firmware size; selecting
+a card reuses the same verified official-download path. Author names are
+display-only and are not a search field. The official path obtains
+`downloadUrl`, `firmwareSha256`, identity, title, version,
 and cover metadata from the public API and verifies the downloaded file before
 extracting it. It records official identity as `play:<projectId>`, preferring
 Chinese title text and `shareVersion` when available. For a local file, an optional expected SHA can be supplied; the

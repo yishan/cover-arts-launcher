@@ -25,9 +25,12 @@ until that play is installed or updated again under the dynamic Launcher.
 
 ## Install plays
 
-The hosted Play Manager accepts an official Play detail URL or a local `.bin`.
-Review the detected title, version, source ID, firmware hash, and cover before
-writing. It validates the ESP32-C3 app and checks Chinese title glyph coverage.
+The hosted Play Manager can search the official catalog by play title, browse
+its categories, and prepare a play from a selected card. It also accepts an
+official Play detail URL or a local `.bin`. Author names are shown on cards but
+are not a search field. Review the detected title, version, source ID, firmware
+hash, and cover before writing. It validates the ESP32-C3 app and checks Chinese
+title glyph coverage.
 
 v1.6.0 allocates each play from its verified app length plus its sidecar. It
 first reuses the smallest released range that fits, then uses tail space. The

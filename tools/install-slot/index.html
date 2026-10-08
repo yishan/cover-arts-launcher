@@ -146,17 +146,36 @@
         <div class="step-body">
           <h3 id="source-heading">准备玩法</h3>
           <div class="source-switcher" role="tablist" aria-label="玩法来源">
-            <button id="official-source-tab" type="button" role="tab" aria-selected="true" aria-controls="play-source" data-source="play">官方 Play URL</button>
+            <button id="official-source-tab" type="button" role="tab" aria-selected="true" aria-controls="play-source" data-source="play">浏览官方玩法</button>
             <button id="local-source-tab" type="button" role="tab" aria-selected="false" aria-controls="local-source" data-source="local" tabindex="-1">本地文件</button>
           </div>
 
           <div id="play-source" class="source-panel" role="tabpanel" aria-labelledby="official-source-tab">
+            <div class="catalog-browser">
+              <div class="catalog-heading">
+                <div>
+                  <p class="eyebrow">OFFICIAL CATALOG</p>
+                  <h4>从玩法库选择</h4>
+                </div>
+                <span class="catalog-scope">按名称与分类浏览</span>
+              </div>
+              <label class="field catalog-search-field" for="catalog-search">
+                <span>搜索玩法名称</span>
+                <input id="catalog-search" name="catalog_query" type="search" autocomplete="off" spellcheck="false" maxlength="120" placeholder="搜索玩法名称…">
+              </label>
+              <div id="catalog-categories" class="catalog-categories" role="tablist" aria-label="玩法分类"></div>
+              <p id="catalog-status" class="catalog-status" role="status" aria-live="polite" aria-atomic="true">正在读取官方玩法…</p>
+              <ul id="catalog-results" class="catalog-grid" role="list" aria-busy="true"></ul>
+              <button id="catalog-load-more" class="button button-secondary catalog-load-more" type="button" hidden>加载更多玩法</button>
+            </div>
+
+            <div class="catalog-divider"><span>或使用精确链接</span></div>
             <div class="url-entry">
               <label class="field" for="play-url">
                 <span>官方 Play 详情 URL</span>
                 <input id="play-url" name="play_url" type="url" inputmode="url" autocomplete="url" spellcheck="false" placeholder="例如 https://ai-passport.folotoy.cn/plays/281/…">
               </label>
-              <button id="resolve-play" class="button button-secondary" type="button">读取玩法资料</button>
+              <button id="resolve-play" class="button button-secondary" type="button">读取链接玩法</button>
             </div>
             <div id="play-meta-summary" class="source-summary" role="status" aria-live="polite" hidden></div>
           </div>
