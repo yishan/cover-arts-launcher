@@ -51,6 +51,8 @@ test("official source supports title search, category browsing, and accessible c
   assert.match(app, /card\.setAttribute\("aria-label"/);
   assert.match(app, /selectCatalogPlay/);
   assert.match(app, /catalogQueryTimer = window\.setTimeout/);
+  assert.match(app, /if \(category\.key === catalog\.category\) return;/);
+  assert.doesNotMatch(app, /if \(catalog\.loading \|\| category\.key === catalog\.category\) return;/);
   assert.match(css, /\.catalog-card:focus-visible/);
   assert.match(css, /@media \(max-width: 620px\)[\s\S]*\.catalog-grid/);
 });

@@ -656,7 +656,7 @@ function renderCatalogCategories() {
     button.tabIndex = selected ? 0 : -1;
     button.textContent = Number.isSafeInteger(count) ? `${category.label} ${count}` : category.label;
     button.addEventListener("click", () => {
-      if (catalog.loading || category.key === catalog.category) return;
+      if (category.key === catalog.category) return;
       catalog.category = category.key;
       catalog.selectedId = null;
       updateCatalogUrlState();
