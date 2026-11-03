@@ -1,26 +1,20 @@
 import {
-  fetchOfficial,
+  prepareOfficialResponse,
   OFFICIAL_PROXY_CACHE_CONTROL,
   OFFICIAL_PROXY_CORS_ORIGIN,
-  officialContentType,
   officialResourceUrl,
-  officialUpstreamError,
   proxyErrorMessage,
 } from "./official-proxy-core.js";
 
 export { officialResourceUrl };
 
-export async function proxyOfficial(response, target, { json = false, fetchImpl = fetch } = {}) {
-  const upstream = await fetchOfficial(target, { json, fetchImpl });
-  const contentType = officialContentType(upstream, { json });
-  const body = upstream.ok
-    ? Buffer.from(await upstream.arrayBuffer())
-    : Buffer.from(JSON.stringify({ error: officialUpstreamError(upstream) }));
-
-  response.statusCode = upstream.ok ? 200 : upstream.status;
-  response.setHeader("content-type", upstream.ok ? contentType : "application/json; charset=utf-8");
+export async function proxyOfficial(response, target, options = {}) {
+  const result = await prepareOfficialResponse(target, options);
+  const body = Buffer.from(result.body);
+  response.statusCode = result.status;
+  response.setHeader("content-type", result.contentType);
   response.setHeader("content-length", body.length);
-  response.setHeader("cache-control", OFFICIAL_PROXY_CACHE_CONTROL);
+  response.setHeader("cache-control", result.cacheControl);
   response.setHeader("access-control-allow-origin", OFFICIAL_PROXY_CORS_ORIGIN);
   response.end(body);
 }

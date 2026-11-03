@@ -8,7 +8,7 @@ export default async function handler(request, response) {
   }
 
   try {
-    await proxyOfficial(response, officialResourceUrl(requestQuery(request, "url")));
+    await proxyOfficial(response, officialResourceUrl(requestQuery(request, "url")), { expectedSha: requestQuery(request, "sha256") });
   } catch (error) {
     sendProxyError(response, error);
   }

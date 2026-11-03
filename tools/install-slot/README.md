@@ -87,6 +87,44 @@ preferred, create a separate Pages project with this directory as its root,
 `npm ci && npm run build:cloudflare` as its build command, and `dist` as its
 output directory.
 
+## Network usage and deferred downloads
+
+Browsing or selecting an official play loads metadata and a thumbnail, not the
+firmware. Confirming installation (or metadata/cover repair) fetches uncached
+`fresh=1` metadata and checks the selected Source ID, version and SHA again.
+A changed publication requires reselection. Download, published SHA validation,
+ESP image extraction and allocation validation all finish before any Flash erase.
+One SHA-verified file, at most 8 MiB, is retained in page memory for retries or
+reselection; cached bytes are verified again when prepared. It is not persisted.
+Local-file installation and complete-system installation keep their existing checks.
+
+The catalog requests `bootstrap=false` and the server returns only public card
+fields, pagination and category counts when supplied. Homepage discovery data,
+instructions, galleries and viewer/profile data are not forwarded. Cards and
+official cover previews prefer the supplied thumbnail, falling back to the image
+URL if no thumbnail is supplied. Selection changes update existing card nodes
+instead of recreating images. No new visual theme or tracking service is added.
+
+Both Vercel and Cloudflare adapters use the shared cache/payload contract:
+
+| Successful response | Browser cache | Shared CDN cache |
+| --- | ---: | ---: |
+| Public catalog | 30 seconds | 5 minutes |
+| Public play metadata | Revalidate | 60 seconds |
+| Versioned image (`v` query) | 1 day | 7 days |
+| Unversioned image | 60 seconds | 1 hour |
+| Firmware with a server-verified `sha256` query | 1 hour | 1 day |
+| Fresh install metadata, unverified firmware, errors, other resources | No storage | No storage |
+
+Only official image routes and SHA-verified firmware receive resource caching.
+A caller-supplied SHA alone never enables firmware caching: the proxy verifies
+the complete upstream body first. The browser independently verifies it again.
+The legacy resource URL without a SHA remains supported without storage.
+Fresh metadata is deliberately not reused for installation. Cache hits reduce
+origin transfer, not the bytes that must still reach a visitor; regional cold
+caches, expiry and unique URLs still invoke the function. Production cache hits
+and usage savings must be measured after deployment, not inferred from local tests.
+
 ## Complete-system installation
 
 The complete-system path is a one-time migration. Before enabling installation
@@ -112,8 +150,8 @@ library as equal outcomes.
 
 A play can be selected from the official catalog by title or category, entered
 as an official Play detail/API URL, or loaded from a local `.bin`. Catalog cards
-show the published cover, title, author, category, and firmware size; selecting
-a card reuses the same verified official-download path. Author names are
+show the published cover, title, author, category, and firmware size. Selection
+loads metadata only; installation uses the verified official-download path. Author names are
 display-only and are not a search field. The official path obtains
 `downloadUrl`, `firmwareSha256`, identity, title, version,
 and cover metadata from the public API and verifies the downloaded file before

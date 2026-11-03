@@ -10,7 +10,7 @@ export default async function handler(request, response) {
 
   try {
     const target = new URL(officialPlayApiPath(requestQuery(request, "url")), OFFICIAL_PLAY_ORIGIN);
-    await proxyOfficial(response, target, { json: true });
+    await proxyOfficial(response, target, { json: true, fresh: requestQuery(request, "fresh") === "1" });
   } catch (error) {
     sendProxyError(response, error);
   }

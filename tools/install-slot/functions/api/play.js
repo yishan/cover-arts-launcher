@@ -8,7 +8,7 @@ export async function onRequest(context) {
 
   try {
     const target = new URL(officialPlayApiPath(requestQuery(context.request, "url")), OFFICIAL_PLAY_ORIGIN);
-    return await proxyOfficial(target, { json: true });
+    return await proxyOfficial(target, { json: true, fresh: requestQuery(context.request, "fresh") === "1" });
   } catch (error) {
     return proxyErrorResponse(error);
   }

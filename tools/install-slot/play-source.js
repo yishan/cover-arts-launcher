@@ -44,7 +44,7 @@ export function normalizeOfficialPlay(payload) {
     title,
     deviceTitle: launcherTitle(play.title, playId),
     version: String(play.shareVersion ?? play.version ?? play.revisionId ?? "").trim(),
-    coverUrl: String(play.image ?? play.thumbnail ?? "").trim(),
+    coverUrl: String(play.thumbnail || play.image || "").trim(),
     firmwareUrl,
     firmwareSha256,
   };

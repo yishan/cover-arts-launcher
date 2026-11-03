@@ -5,13 +5,9 @@ import { onRequest as playHandler } from "./functions/api/play.js";
 import { onRequest as resourceHandler } from "./functions/api/resource.js";
 
 function upstreamResponse(body, { status = 200, url, contentType = "application/octet-stream" } = {}) {
-  return {
-    body: new Blob([body]).stream(),
-    headers: new Headers({ "content-type": contentType }),
-    ok: status >= 200 && status < 300,
-    status,
-    url,
-  };
+  const response = new Response(body, { status, headers: { "content-type": contentType } });
+  Object.defineProperty(response, "url", { value: url });
+  return response;
 }
 
 test("Cloudflare Play function maps an official detail URL to the public API", async () => {
@@ -32,7 +28,7 @@ test("Cloudflare Play function maps an official detail URL to the public API", a
     });
     assert.equal(requested, "https://ai-passport.folotoy.cn/api/plays/id/281");
     assert.equal(response.status, 200);
-    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.match(response.headers.get("cache-control"), /s-maxage=60/);
     assert.equal(response.headers.get("access-control-allow-origin"), "*");
     assert.equal(response.headers.get("content-type"), "application/json; charset=utf-8");
     assert.equal(await response.text(), '{"projectId":"281"}');
@@ -59,7 +55,7 @@ test("Cloudflare catalog function forwards only normalized title and category fi
     });
     assert.equal(
       requested,
-      "https://ai-passport.folotoy.cn/api/plays?tag=&bootstrap=true&q=flag&category=games&sort=relevance&period=all&limit=12&offset=0",
+      "https://ai-passport.folotoy.cn/api/plays?tag=&bootstrap=false&q=flag&category=games&sort=relevance&period=all&limit=12&offset=0",
     );
     assert.equal(response.status, 200);
   } finally {
@@ -75,7 +71,7 @@ test("Cloudflare catalog function rejects unsupported categories", async () => {
   assert.match(await response.text(), /category/i);
 });
 
-test("Cloudflare resource function streams official API assets", async () => {
+test("Cloudflare resource function returns official API assets byte-for-byte", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (target) => upstreamResponse(new Uint8Array([1, 2, 3]), {
     url: String(target),

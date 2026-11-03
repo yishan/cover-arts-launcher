@@ -47,7 +47,7 @@ test("Vercel Play function maps an official detail URL to the public API", async
     }, response);
     assert.equal(requested, "https://ai-passport.folotoy.cn/api/plays/id/281");
     assert.equal(response.statusCode, 200);
-    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.match(response.headers.get("cache-control"), /s-maxage=60/);
     assert.equal(response.body.toString(), '{"projectId":"281"}');
   } finally {
     globalThis.fetch = originalFetch;
@@ -77,7 +77,7 @@ test("Vercel catalog function forwards normalized title and category filters", a
     }, response);
     assert.equal(
       requested,
-      "https://ai-passport.folotoy.cn/api/plays?tag=&bootstrap=true&q=flag&category=games&sort=relevance&period=all&limit=12&offset=0",
+      "https://ai-passport.folotoy.cn/api/plays?tag=&bootstrap=false&q=flag&category=games&sort=relevance&period=all&limit=12&offset=0",
     );
     assert.equal(response.statusCode, 200);
   } finally {

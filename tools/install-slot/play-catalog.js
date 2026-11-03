@@ -35,7 +35,7 @@ export function officialPlayCatalogApiPath({ query = "", category = "all", limit
   offset = integerInRange(offset, "offset", 0, 100000);
   const parameters = new URLSearchParams({
     tag: "",
-    bootstrap: String(offset === 0),
+    bootstrap: "false",
     q: query,
     category,
     sort: query ? "relevance" : "newest",
@@ -70,7 +70,7 @@ export function normalizeOfficialCatalog(payload) {
       author: String(play.author ?? play.authorProfile?.name ?? "未知作者").trim() || "未知作者",
       category,
       categoryLabel: categoryByKey.get(category).label,
-      coverUrl: String(play.image ?? play.thumbnail ?? "").trim(),
+      coverUrl: String(play.thumbnail || play.image || "").trim(),
       firmwareSize,
       detailUrl: `${OFFICIAL_PLAY_ORIGIN}/plays/${playId}/`,
     };
@@ -83,4 +83,22 @@ export function normalizeOfficialCatalog(payload) {
     }
   }
   return { plays, total, hasMore, categoryCounts };
+}
+
+// Keep the wire format compatible with older managers, without forwarding
+// homepage discovery, instructions, galleries or viewer/profile information.
+export function compactOfficialCatalog(payload) {
+  const catalog = normalizeOfficialCatalog(payload);
+  return {
+    plays: catalog.plays.map((play) => ({
+      projectId: play.playId,
+      title: play.title,
+      author: play.author,
+      categoryKey: play.category,
+      thumbnail: play.coverUrl,
+      firmwareSize: play.firmwareSize,
+    })),
+    pagination: { total: catalog.total, hasMore: catalog.hasMore },
+    categoryCounts: catalog.categoryCounts,
+  };
 }

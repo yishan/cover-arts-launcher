@@ -10,7 +10,7 @@ import {
 test("builds a fixed-origin official catalog query for title search and category browsing", () => {
   assert.equal(
     officialPlayCatalogApiPath({ query: "  国旗猜猜看  ", category: "games", limit: 12, offset: 0 }),
-    "/api/plays?tag=&bootstrap=true&q=%E5%9B%BD%E6%97%97%E7%8C%9C%E7%8C%9C%E7%9C%8B&category=games&sort=relevance&period=all&limit=12&offset=0",
+    "/api/plays?tag=&bootstrap=false&q=%E5%9B%BD%E6%97%97%E7%8C%9C%E7%8C%9C%E7%9C%8B&category=games&sort=relevance&period=all&limit=12&offset=0",
   );
   assert.equal(
     officialPlayCatalogApiPath({ category: "all", limit: 12, offset: 12 }),

@@ -27,7 +27,7 @@ async function handle(request, response) {
   const requestUrl = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
   try {
     if (requestUrl.pathname === "/api/play") {
-      await proxyOfficial(response, playApiUrl(requestUrl.searchParams.get("url") ?? ""), { json: true });
+      await proxyOfficial(response, playApiUrl(requestUrl.searchParams.get("url") ?? ""), { json: true, fresh: requestUrl.searchParams.get("fresh") === "1" });
       return;
     }
     if (requestUrl.pathname === "/api/catalog") {
@@ -46,7 +46,7 @@ async function handle(request, response) {
       return;
     }
     if (requestUrl.pathname === "/api/resource") {
-      await proxyOfficial(response, officialResourceUrl(requestUrl.searchParams.get("url") ?? ""));
+      await proxyOfficial(response, officialResourceUrl(requestUrl.searchParams.get("url") ?? ""), { expectedSha: requestUrl.searchParams.get("sha256") ?? "" });
       return;
     }
     const pathname = requestUrl.pathname === "/"

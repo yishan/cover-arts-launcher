@@ -11,7 +11,7 @@ export async function onRequest(context) {
   }
 
   try {
-    return await proxyOfficial(officialResourceUrl(requestQuery(context.request, "url")));
+    return await proxyOfficial(officialResourceUrl(requestQuery(context.request, "url")), { expectedSha: requestQuery(context.request, "sha256") });
   } catch (error) {
     return proxyErrorResponse(error);
   }

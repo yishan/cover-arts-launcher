@@ -40,6 +40,8 @@ const state = {
   slots: [],
   sourceKind: "play-api",
   preparedPlay: null,
+  pendingPlay: null,
+  verifiedDownload: null,
   preparedCover: null,
   coverPreviewUrl: null,
   busy: false,
@@ -537,9 +539,10 @@ function applyRecommendation() {
   updateReplacementWarning();
 }
 
-async function fetchOfficialResource(url) {
-  const endpoint = managerApiUrl(`/api/resource?url=${encodeURIComponent(url)}`);
-  const response = await fetch(endpoint, { cache: "no-store" });
+async function fetchOfficialResource(url, expectedSha = "") {
+  const hashQuery = expectedSha ? `&sha256=${encodeURIComponent(expectedSha)}` : "";
+  const endpoint = managerApiUrl(`/api/resource?url=${encodeURIComponent(url)}${hashQuery}`);
+  const response = await fetch(endpoint);
   if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error ?? `HTTP ${response.status}`);
   return new Uint8Array(await response.arrayBuffer());
 }
@@ -597,8 +600,9 @@ async function loadPreferredCover() {
     await prepareCover(new Uint8Array(await local.arrayBuffer()), "自定义封面");
     return;
   }
-  if (state.preparedPlay?.coverBytes) {
-    await prepareCover(state.preparedPlay.coverBytes, "官方封面");
+  const officialCover = state.preparedPlay?.coverBytes ?? state.pendingPlay?.coverBytes;
+  if (officialCover) {
+    await prepareCover(officialCover, "官方封面");
     return;
   }
   clearCoverPreview();
@@ -662,6 +666,7 @@ function renderCatalogCategories() {
     button.tabIndex = selected ? 0 : -1;
     button.textContent = Number.isSafeInteger(count) ? `${category.label} ${count}` : category.label;
     button.addEventListener("click", () => {
+      if (state.busy || state.coverBusy || state.catalogSelecting) return;
       if (category.key === catalog.category) return;
       catalog.category = category.key;
       catalog.selectedId = null;
@@ -710,7 +715,8 @@ function renderCatalogResults(message = "") {
     card.className = "catalog-card";
     card.setAttribute("aria-label", `选择玩法：${play.title}，${play.author}`);
     card.setAttribute("aria-pressed", String(selected));
-    card.disabled = catalog.loading || state.catalogSelecting;
+    card.dataset.playId = play.playId;
+    card.disabled = catalog.loading || state.catalogSelecting || state.busy || state.coverBusy;
 
     const art = document.createElement("span");
     art.className = "catalog-card-art";
@@ -752,6 +758,7 @@ function renderCatalogResults(message = "") {
 }
 
 async function loadCatalog({ append = false } = {}) {
+  if (state.busy || state.coverBusy || state.catalogSelecting) return;
   const requestId = ++catalog.requestId;
   const offset = append ? catalog.plays.length : 0;
   let resultMessage = "";
@@ -766,7 +773,7 @@ async function loadCatalog({ append = false } = {}) {
       limit: "12",
       offset: String(offset),
     });
-    const response = await fetch(managerApiUrl(`/api/catalog?${parameters}`), { cache: "no-store" });
+    const response = await fetch(managerApiUrl(`/api/catalog?${parameters}`));
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error ?? `HTTP ${response.status}`);
     const normalized = normalizeOfficialCatalog(payload);
@@ -796,21 +803,29 @@ async function loadCatalog({ append = false } = {}) {
   }
 }
 
+function refreshCatalogSelection() {
+  document.querySelectorAll(".catalog-card").forEach((card) => {
+    card.setAttribute("aria-pressed", String(card.dataset.playId === catalog.selectedId));
+    card.disabled = catalog.loading || state.catalogSelecting || state.busy || state.coverBusy;
+  });
+}
+
 async function selectCatalogPlay(play) {
-  if (state.catalogSelecting) return;
+  if (state.catalogSelecting || state.busy || state.coverBusy) return;
   catalog.selectedId = play.playId;
   state.catalogSelecting = true;
   $("#play-url").value = play.detailUrl;
   $("#catalog-status").textContent = `正在准备「${play.title}」…`;
-  renderCatalogResults();
+  refreshCatalogSelection();
   try {
     await resolvePlayUrl();
-    $("#catalog-status").textContent = state.preparedPlay
+    $("#catalog-status").textContent = state.pendingPlay
       ? `已选择「${play.title}」，请继续确认封面与安装位置。`
       : `未能准备「${play.title}」，请查看下方错误信息。`;
   } finally {
     state.catalogSelecting = false;
-    renderCatalogResults();
+    refreshCatalogSelection();
+    refreshActions();
   }
 }
 
@@ -824,48 +839,88 @@ function scheduleCatalogSearch() {
 }
 
 async function resolvePlayUrl() {
+  if (state.busy || state.coverBusy) return;
+  state.coverBusy = true;
   state.preparedPlay = null;
+  state.pendingPlay = null;
   clearCoverPreview("正在读取官方封面…");
   refreshActions();
   try {
     setResult("#play-result", "正在读取官方 Play 信息…");
-    const endpoint = managerApiUrl(`/api/play?url=${encodeURIComponent($("#play-url").value)}`);
-    const response = await fetch(endpoint, { cache: "no-store" });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error ?? `HTTP ${response.status}`);
-    const play = normalizeOfficialPlay(payload);
+    const detailUrl = $("#play-url").value;
+    const play = await fetchOfficialMetadata(detailUrl);
     $("#play-title").value = play.deviceTitle;
     $("#play-version").value = play.version;
     $("#play-source-id").value = play.sourceId;
     $("#play-meta-summary").textContent = `官方 Play #${play.playId} · ${play.title} · 设备显示 ${play.deviceTitle}`;
     $("#play-meta-summary").hidden = false;
-    setResult("#play-result", "已读取发布信息，正在下载并验证固件…");
-    const bytes = await fetchOfficialResource(play.firmwareUrl);
+    state.pendingPlay = { ...play, detailUrl, coverBytes: null };
     let coverBytes = null;
     if (play.coverUrl) {
       try { coverBytes = await fetchOfficialResource(play.coverUrl); } catch (error) { log(`封面下载失败，将使用占位图：${error.message}`); }
     }
-    await preparePlay(bytes, {
-      sourceKind: "play-api",
-      sourceId: play.sourceId,
-      title: play.deviceTitle,
-      version: play.version,
-      coverBytes,
-    }, play.firmwareSha256);
+    state.pendingPlay.coverBytes = coverBytes;
     await loadPreferredCover();
-    setResult("#play-result", "标题、版本、Source ID、固件与封面均已读取；发布 SHA 已确认。", "ok");
+    $("#image-info").textContent = "尚未下载固件；安装前将核对版本、下载并验证 SHA。";
+    applyRecommendation();
+    setResult("#play-result", "玩法信息与封面已读取；确认安装后再下载固件。", "ok");
   } catch (error) {
     state.preparedPlay = null;
+    state.pendingPlay = null;
     clearCoverPreview("未能读取官方封面。");
     const hint = location.protocol === "file:" && error instanceof TypeError
       ? "请先启动 Play Manager 本地服务，或改用 http://127.0.0.1:4173 打开。"
       : error.message;
     setResult("#play-result", `无法准备玩法：${hint}`, "error");
+  } finally {
+    state.coverBusy = false;
     refreshActions();
   }
 }
 
+async function fetchOfficialMetadata(detailUrl, fresh = false) {
+  const endpoint = managerApiUrl(`/api/play?url=${encodeURIComponent(detailUrl)}${fresh ? "&fresh=1" : ""}`);
+  const response = await fetch(endpoint, fresh ? { cache: "no-store" } : {});
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error ?? `HTTP ${response.status}`);
+  return normalizeOfficialPlay(payload);
+}
+
+async function ensurePreparedPlay() {
+  const selected = state.pendingPlay;
+  if (!selected) {
+    if (!state.preparedPlay) throw new Error("请先选择玩法或载入本地固件。");
+    return;
+  }
+  setResult("#play-result", "正在核对官网版本…");
+  const current = await fetchOfficialMetadata(selected.detailUrl, true);
+  if (current.sourceId !== selected.sourceId || current.version !== selected.version ||
+      current.firmwareSha256 !== selected.firmwareSha256) {
+    state.preparedPlay = null;
+    throw new Error("官网玩法已更新，请重新读取或选择玩法后再安装。");
+  }
+  if (state.preparedPlay?.sourceSha === current.firmwareSha256) return;
+  const metadata = {
+    sourceKind: "play-api", sourceId: selected.sourceId,
+    title: $("#play-title").value, version: $("#play-version").value.trim(),
+    coverBytes: selected.coverBytes,
+  };
+  setResult("#play-result", "正在下载并验证固件…");
+  let bytes = state.verifiedDownload?.sha === current.firmwareSha256
+    ? state.verifiedDownload.bytes : null;
+  if (!bytes) {
+    bytes = await fetchOfficialResource(current.firmwareUrl, current.firmwareSha256);
+    await verifyPublished(bytes, current.firmwareSha256);
+    // Keep only one verified file, bounded by the device's 8 MiB Flash.
+    state.verifiedDownload = bytes.length <= 0x800000
+      ? { sha: current.firmwareSha256, bytes } : null;
+  }
+  await preparePlay(bytes, metadata, current.firmwareSha256);
+}
+
 async function prepareLocalFile() {
+  if (state.busy || state.coverBusy || state.catalogSelecting) return;
+  state.pendingPlay = null;
   try {
     const file = $("#play-file").files[0];
     if (!file) { state.preparedPlay = null; refreshActions(); return; }
@@ -886,6 +941,7 @@ async function prepareLocalFile() {
 }
 
 async function handleCoverFileChange() {
+  if (state.busy || state.coverBusy || state.catalogSelecting) return;
   state.coverBusy = true;
   refreshActions();
   try {
@@ -1057,6 +1113,7 @@ async function prepareAnotherPlay() {
   }
   hidePlayCompletion();
   state.preparedPlay = null;
+  state.pendingPlay = null;
   clearCoverPreview();
   $("#play-url").value = "";
   $("#play-file").value = "";
@@ -1105,12 +1162,14 @@ async function finishPlaySession() {
 async function installPlay() {
   if (state.busy) return;
   state.busy = true;
+  refreshActions();
   hidePlayCompletion();
   let plan;
   let tableCommitStarted = false;
   let tableWritten = false;
   try {
     if (!state.loader || state.target?.kind !== "dynamic-launcher" || !state.library) throw new Error("请先连接动态 Launcher 布局。");
+    await ensurePreparedPlay();
     if (!state.preparedPlay) throw new Error("请先载入并验证玩法固件。");
     if ($("#target-slot").value !== String(state.slots.length)) throw new Error("新增玩法只能追加到玩法库末尾。");
     if (state.slots.some((slot) => slot.state !== "ready")) throw new Error("玩法库包含无效记录，请先恢复完整系统，不能继续追加。");
@@ -1159,6 +1218,7 @@ async function installPlay() {
     });
     renderSlots();
     state.preparedPlay = null;
+    state.pendingPlay = null;
     log(`位置 ${slot.slotId + 1} 已安装并重新扫描确认；保持连接等待下一项操作。`);
   } catch (error) {
     const recovery = tableWritten
@@ -1178,11 +1238,13 @@ async function installPlay() {
 async function repairMetadataCover() {
   if (state.busy) return;
   state.busy = true;
+  refreshActions();
   hidePlayCompletion();
   let repaired = false;
   let slotId = null;
   try {
     if (!state.loader || state.target?.kind !== "dynamic-launcher") throw new Error("请先连接动态 Launcher 布局。");
+    await ensurePreparedPlay();
     if (!state.preparedPlay || !state.preparedCover) throw new Error("请先载入玩法固件和封面。");
     slotId = Number.parseInt($("#target-slot").value, 10);
     const slot = state.slots.find((item) => item.slotId === slotId);
@@ -1333,12 +1395,22 @@ function refreshActions() {
   $("#install-system").disabled = state.busy || !systemReady;
   const chosen = state.slots.find((item) => String(item.slotId) === $("#target-slot").value);
   const appendSelected = $("#target-slot").value === String(state.slots.length);
-  const fits = Boolean(state.preparedPlay && state.library && state.preparedPlay.app.length <= state.library.largestInstallableImage);
+  const hasPlay = Boolean(state.preparedPlay || state.pendingPlay);
+  // Official image length is known only after the deferred download/extraction.
+  // appendDynamicSlot remains the authoritative pre-erase capacity check.
+  const fits = Boolean(state.library && (state.preparedPlay
+    ? state.preparedPlay.app.length <= state.library.largestInstallableImage
+    : state.pendingPlay && state.library.largestInstallableImage > 0));
   $("#install-play").disabled = state.busy || state.coverBusy || !state.loader || state.target?.kind !== "dynamic-launcher" || !appendSelected || !fits;
-  $("#repair-cover").disabled = state.busy || state.coverBusy || !state.loader || state.target?.kind !== "dynamic-launcher" || !state.preparedPlay || !state.preparedCover || !chosen || chosen.state !== "ready";
+  $("#repair-cover").disabled = state.busy || state.coverBusy || !state.loader || state.target?.kind !== "dynamic-launcher" || !hasPlay || !state.preparedCover || !chosen || chosen.state !== "ready";
   $("#erase-slot").disabled = state.busy || state.coverBusy || !state.loader || state.target?.kind !== "dynamic-launcher" || !chosen || chosen.state !== "ready" || !$("#erase-confirm").checked;
   $("#finish-play-session").disabled = state.busy || !state.transport;
   document.querySelectorAll(".slot-card:not(.is-ghost)").forEach((button) => { button.disabled = state.busy || !state.loader; });
+  const inputBusy = state.busy || state.coverBusy || state.catalogSelecting;
+  document.querySelectorAll("#play-url, #resolve-play, #play-file, #play-sha, #play-title, #play-version, #play-source-id, #cover-file, #catalog-search, #catalog-categories button, [data-source]")
+    .forEach((input) => { input.disabled = inputBusy; });
+  $("#catalog-load-more").disabled = inputBusy || catalog.loading;
+  refreshCatalogSelection();
   if (!state.busy && state.loader && document.querySelector(".device-dock").dataset.state === "working") {
     const label = state.target?.kind === "dynamic-launcher" ? "动态 Launcher 布局"
       : state.target?.kind === "compatible-launcher" ? "旧版三位置 Launcher"
@@ -1365,8 +1437,10 @@ function selectMode(mode, updateUrl = true) {
 }
 
 function selectSource(source, updateUrl = true) {
+  if (state.busy || state.coverBusy || state.catalogSelecting) return;
   state.sourceKind = source === "play" ? "play-api" : "local";
   state.preparedPlay = null;
+  state.pendingPlay = null;
   clearCoverPreview();
   $("#play-source").hidden = source !== "play";
   $("#local-source").hidden = source !== "local";
