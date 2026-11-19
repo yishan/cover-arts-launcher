@@ -115,10 +115,16 @@ function updateTitleCheck() {
     target.className = "inline-message error";
   } else {
     const glyphs = result.unsupported.map(({ character, codePoint }) => `${character} (${codePoint})`).join("、");
-    target.textContent = `设备字体未收录：${glyphs}`;
+    target.textContent = `设备字体未收录：${glyphs}；请改用设备支持的字符`;
     target.className = "inline-message error";
   }
   return result.valid;
+}
+
+function describeTitleChanges(changes) {
+  return changes.map(({ character, codePoint, replacement }) => replacement
+    ? `${character} (${codePoint}) 替换为「${replacement === " " ? "空格" : replacement}」`
+    : `${character} (${codePoint}) 已移除`).join("、");
 }
 
 function scrollBehavior() {
@@ -868,9 +874,11 @@ async function resolvePlayUrl() {
     const detailUrl = $("#play-url").value;
     const play = await fetchOfficialMetadata(detailUrl);
     $("#play-title").value = play.deviceTitle;
+    updateTitleCheck();
     $("#play-version").value = play.version;
     $("#play-source-id").value = play.sourceId;
-    $("#play-meta-summary").textContent = `官方 Play #${play.playId} · ${play.title} · 设备显示 ${play.deviceTitle}`;
+    const changes = play.deviceTitleChanges?.length ? `（${describeTitleChanges(play.deviceTitleChanges)}）` : "";
+    $("#play-meta-summary").textContent = `官方 Play #${play.playId} · ${play.title} · 设备显示 ${play.deviceTitle}${changes}`;
     $("#play-meta-summary").hidden = false;
     state.pendingPlay = { ...play, detailUrl, coverBytes: null };
     let coverBytes = null;

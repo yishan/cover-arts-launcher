@@ -156,7 +156,12 @@ display-only and are not a search field. The official path obtains
 `downloadUrl`, `firmwareSha256`, identity, title, version,
 and cover metadata from the public API and verifies the downloaded file before
 extracting it. It records official identity as `play:<projectId>`, preferring
-Chinese title text and `shareVersion` when available. For a local file, an optional expected SHA can be supplied; the
+Chinese title text and `shareVersion` when available. A published title is
+adapted to the Launcher font before installation: common punctuation outside
+the font is replaced with a supported equivalent, any other unsupported
+character is removed, and the title field reports each change. The manager no
+longer requires a manual rename before a title with such characters can be
+installed. For a local file, an optional expected SHA can be supplied; the
 computed source SHA is authoritative when it is omitted.
 
 Both app-only ESP32-C3 images and merged images are accepted. Merged input must
