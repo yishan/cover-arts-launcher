@@ -193,7 +193,6 @@ jobs:
           CLAUDE_CODE_MAX_TURNS: ${{ vars.CLAUDE_CODE_MAX_TURNS || '80' }}
         run: |
           set -euo pipefail
-          schema_json="$(cat tools/feedback_pr_output_schema.json)"
           set +e
           claude -p \
             --no-session-persistence \
@@ -201,7 +200,6 @@ jobs:
             --allowedTools "Read,Edit,Write,Glob,Grep,Bash" \
             --max-turns "${CLAUDE_CODE_MAX_TURNS}" \
             --output-format json \
-            --json-schema "${schema_json}" \
             < "$RUNNER_TEMP/agent-prompt.md" \
             > "$RUNNER_TEMP/claude-raw.json"
           claude_rc=$?

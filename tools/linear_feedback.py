@@ -342,7 +342,7 @@ Follow these mandatory rules strictly:
 6. Do NOT edit `docs/CHANGELOG.md` or `docs/CHANGELOG.zh_CN.md`. Keep any modified Markdown docs paired in English (`.md`) and Simplified Chinese (`.zh_CN.md`) with reciprocal top language links.
 7. Run `./tools/validate.sh --static` after your changes and ensure it passes before finishing. Do NOT claim build/test success equals on-device hardware validation.
 8. If the feedback is too ambiguous, contradictory, or missing critical reproduction details to fix safely, make NO code changes and return `status: "needs_clarification"` with concise `clarification_questions`.
-9. Return a JSON object matching `tools/feedback_pr_output_schema.json`.
+9. Your FINAL response MUST be ONLY a single valid JSON object (no surrounding prose or markdown outside the JSON) matching `tools/feedback_pr_output_schema.json` with exact keys: `status` (`"ready_for_pr"` | `"needs_clarification"` | `"no_changes_needed"`), `pr_title` (Conventional Commit title without trailing period), `summary`, `root_cause`, `area` (`"manager-ui"` | `"firmware"` | `"both"` | `"docs-or-tooling"`), `skills_applied` (array of strings), `verification` (`{{"static_checks": "PASS"|"FAIL"|"NOT RUN", "firmware_build": "PASS"|"FAIL"|"NOT RUN", "notes": "..."}}`), `unverified` (array of strings), and `clarification_questions` (array of strings).
 
 ## Workflow Skill Reference
 
@@ -707,14 +707,23 @@ def extract_claude_output(envelope: dict[str, Any]) -> dict[str, Any]:
 
     raw_result = str(envelope.get("result") or "").strip()
     if raw_result:
+        candidates: list[str] = []
         fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw_result, re.DOTALL)
-        candidate = fenced.group(1) if fenced else raw_result
-        try:
-            parsed = json.loads(candidate)
-            if isinstance(parsed, dict):
-                return parsed
-        except json.JSONDecodeError:
-            pass
+        if fenced:
+            candidates.append(fenced.group(1))
+        candidates.append(raw_result)
+        first_brace = raw_result.find("{")
+        last_brace = raw_result.rfind("}")
+        if first_brace != -1 and last_brace > first_brace:
+            candidates.append(raw_result[first_brace : last_brace + 1])
+
+        for candidate in candidates:
+            try:
+                parsed = json.loads(candidate)
+                if isinstance(parsed, dict):
+                    return parsed
+            except json.JSONDecodeError:
+                continue
 
     raise ValueError("Claude CLI output missing structured_output JSON object")
 

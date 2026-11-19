@@ -230,6 +230,11 @@ class LinearFeedbackTests(unittest.TestCase):
         )
         self.assertEqual(fenced["status"], "no_changes_needed")
 
+        prose_wrapped = lf.extract_claude_output(
+            {"is_error": False, "result": 'Summary below:\n{"status": "needs_clarification", "summary": "ok"}\nEnd.'}
+        )
+        self.assertEqual(prose_wrapped["status"], "needs_clarification")
+
         with self.assertRaises(ValueError):
             lf.extract_claude_output({"is_error": True, "result": "rate limit"})
 
