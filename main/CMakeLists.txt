@@ -7,6 +7,8 @@ idf_component_register(
          "launcher_dynamic_sidecar.c"
          "launcher_manifest.c"
          "launcher_model.c"
+         "launcher_resume.c"
+         "launcher_resume_policy.c"
          "launcher_slot_policy.c"
          "launcher_slots.c"
          "launcher_stats.c"

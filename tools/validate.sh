@@ -62,6 +62,10 @@ run_static_checks() {
         -o "${test_dir}/test_launcher_boot_policy"
     "${test_dir}/test_launcher_boot_policy"
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_launcher_resume.c main/launcher_resume_policy.c \
+        -o "${test_dir}/test_launcher_resume"
+    "${test_dir}/test_launcher_resume"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
         tests/test_launcher_slot_policy.c main/launcher_slot_policy.c \
         -o "${test_dir}/test_launcher_slot_policy"
     "${test_dir}/test_launcher_slot_policy"

@@ -2,6 +2,7 @@
 
 #include "launcher_model.h"
 #include "launcher_cover_store.h"
+#include "launcher_resume.h"
 #include "launcher_slots.h"
 #include "launcher_stats.h"
 #include "launcher_trust_store.h"
@@ -53,7 +54,8 @@ static launcher_trust_source_t slot_trust_source(
     return LAUNCHER_TRUST_LEGACY_GENERIC;
 }
 
-esp_err_t launcher_boot_slot(size_t slot_id, const char *source_id)
+esp_err_t launcher_boot_slot(size_t slot_id, const char *source_id,
+                             bool count_launch)
 {
     launcher_slot_info_t slot;
     const esp_partition_t *partition;
@@ -94,11 +96,18 @@ esp_err_t launcher_boot_slot(size_t slot_id, const char *source_id)
     if (error != ESP_OK) {
         return error;
     }
-    error = launcher_stats_record_launch(slot_id, source_id,
-                                         slot.image_sha256, NULL);
+    error = launcher_resume_save(slot_id, slot.image_sha256);
     if (error != ESP_OK) {
-        ESP_LOGW(TAG, "Position %u launch count was not saved: %s",
+        ESP_LOGW(TAG, "Position %u sleep resume was not saved: %s",
                  (unsigned)slot_id + 1u, esp_err_to_name(error));
+    }
+    if (count_launch) {
+        error = launcher_stats_record_launch(slot_id, source_id,
+                                             slot.image_sha256, NULL);
+        if (error != ESP_OK) {
+            ESP_LOGW(TAG, "Position %u launch count was not saved: %s",
+                     (unsigned)slot_id + 1u, esp_err_to_name(error));
+        }
     }
     ESP_LOGI(TAG, "PERF slot=%u restart=%lld ms", (unsigned)slot_id + 1u,
              (long long)((esp_timer_get_time() - started_at) / 1000));

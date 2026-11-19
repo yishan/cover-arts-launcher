@@ -3,6 +3,7 @@
 #include "launcher_cover_store.h"
 #include "launcher_dynamic_sidecar.h"
 #include "launcher_model.h"
+#include "launcher_resume.h"
 #include "launcher_slots.h"
 #include "launcher_stats.h"
 #include "launcher_trust_store.h"
@@ -191,6 +192,38 @@ static int battery_percent(void)
     return s_battery_available ? bsp_battery_soc() : -1;
 }
 
+static launcher_reset_kind_t current_reset_kind(void)
+{
+    switch (esp_reset_reason()) {
+    case ESP_RST_DEEPSLEEP:
+        return LAUNCHER_RESET_DEEP_SLEEP;
+    case ESP_RST_POWERON:
+        return LAUNCHER_RESET_POWER_ON;
+    default:
+        return LAUNCHER_RESET_OTHER;
+    }
+}
+
+static launcher_resume_action_t resume_session(
+    launcher_resume_record_t *record)
+{
+    bool loaded = false;
+    bool slot_bootable = false;
+    const uint8_t *slot_sha256 = NULL;
+
+    memset(record, 0, sizeof(*record));
+    if (s_stats_available) {
+        loaded = launcher_resume_load(record) == ESP_OK;
+    }
+    if (loaded && record->valid && record->slot_id < s_slot_count) {
+        slot_bootable =
+            launcher_slot_is_bootable(s_slots[record->slot_id].state);
+        slot_sha256 = s_slots[record->slot_id].image_sha256;
+    }
+    return launcher_resume_decide(current_reset_kind(), record, s_slot_count,
+                                  slot_bootable, slot_sha256);
+}
+
 static void render(const char *status_message)
 {
     if (!bsp_lvgl_lock(500)) {
@@ -229,7 +262,7 @@ static void process_input(const input_event_t *input)
     case LAUNCHER_ACTION_LAUNCH: {
         render("正在验证玩法…");
         esp_err_t error = launcher_boot_slot(
-            result.slot_id, s_slots[result.slot_id].source_id);
+            result.slot_id, s_slots[result.slot_id].source_id, true);
         ESP_LOGE(TAG, "Position %u launch failed: %s",
                  (unsigned)result.slot_id + 1u, esp_err_to_name(error));
         refresh_slots();
@@ -350,6 +383,9 @@ void app_main(void)
              (unsigned long)esp_get_free_heap_size());
     launcher_model_init(&s_model, s_slots, s_slot_count);
     s_battery_available = bsp_battery_init() == ESP_OK;
+    launcher_resume_record_t resume_record;
+    launcher_resume_action_t resume = resume_session(&resume_record);
+    bool resume_pending = resume == LAUNCHER_RESUME_RELAUNCH;
 
     ESP_LOGI(TAG, "heap before UI: %lu",
              (unsigned long)esp_get_free_heap_size());
@@ -360,7 +396,8 @@ void app_main(void)
     bool ui_ready = launcher_ui_create();
     if (ui_ready) {
         launcher_ui_render(&s_model, s_covers, s_cover_sources,
-                           battery_percent(), NULL);
+                           battery_percent(),
+                           resume_pending ? "正在恢复玩法" : NULL);
     }
     bsp_lvgl_unlock();
     if (!ui_ready) {
@@ -370,6 +407,27 @@ void app_main(void)
     s_heap_after_ui = esp_get_free_heap_size();
     ESP_LOGI(TAG, "PERF startup ui-ready=%lld ms",
              (long long)((esp_timer_get_time() - started_at) / 1000));
+
+    if (resume == LAUNCHER_RESUME_DISCARD) {
+        esp_err_t clear_error = launcher_resume_clear();
+        if (clear_error != ESP_OK) {
+            ESP_LOGW(TAG, "Stale sleep resume was not cleared: %s",
+                     esp_err_to_name(clear_error));
+        }
+    }
+    if (resume_pending) {
+        ESP_LOGI(TAG, "Deep-sleep wake: restoring position %u",
+                 (unsigned)resume_record.slot_id + 1u);
+        esp_err_t resume_error = launcher_boot_slot(
+            resume_record.slot_id,
+            s_slots[resume_record.slot_id].source_id, false);
+        ESP_LOGE(TAG, "Position %u sleep resume failed: %s",
+                 (unsigned)resume_record.slot_id + 1u,
+                 esp_err_to_name(resume_error));
+        (void)launcher_resume_clear();
+        refresh_slots();
+        render("恢复失败，请重新选择");
+    }
 
     error = start_input();
     if (error != ESP_OK) {
