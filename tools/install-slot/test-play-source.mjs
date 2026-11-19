@@ -54,10 +54,77 @@ test("bounds a Chinese device title at a valid 64-byte UTF-8 boundary", () => {
   assert.doesNotThrow(() => new TextDecoder("utf-8", { fatal: true }).decode(new TextEncoder().encode(deviceTitle)));
 });
 
-test("accepts official detail URLs and rejects non-official sources", () => {
-  assert.equal(officialPlayApiPath("https://ai-passport.folotoy.cn/plays/281/"), "/api/plays/id/281");
-  assert.equal(officialPlayApiPath("https://ai-passport.folotoy.cn/en/plays/meta-pass/"), "/api/plays/meta-pass");
-  assert.throws(() => officialPlayApiPath("https://example.com/plays/281/"), /official/i);
+function rejectedPlayUrl(value) {
+  try {
+    officialPlayApiPath(value);
+  } catch (error) {
+    return error;
+  }
+  assert.fail(`expected ${value} to be rejected`);
+}
+
+test("accepts official detail URLs and public Play API URLs", () => {
+  const cases = new Map([
+    ["https://ai-passport.folotoy.cn/plays/281/", "/api/plays/id/281"],
+    ["https://ai-passport.folotoy.cn/plays/222/", "/api/plays/id/222"],
+    ["https://ai-passport.folotoy.cn/plays/537", "/api/plays/id/537"],
+    ["https://ai-passport.folotoy.cn/en/plays/meta-pass/", "/api/plays/meta-pass"],
+    ["https://ai-passport.folotoy.cn/api/plays/id/281", "/api/plays/id/281"],
+    ["https://ai-passport.folotoy.cn/api/plays/meta-pass/", "/api/plays/meta-pass/"],
+  ]);
+  for (const [input, expected] of cases) {
+    assert.equal(officialPlayApiPath(input), expected, input);
+  }
+});
+
+test("rejects non-official sources with an actionable Chinese hint", () => {
+  for (const input of [
+    "https://example.com/plays/281/",
+    "https://github.com/yishan/cover-arts-launcher",
+    "https://ai-passport.folotoy.cn.example.com/plays/281/",
+    "http://ai-passport.folotoy.cn/plays/281/",
+    "ftp://ai-passport.folotoy.cn/plays/281/",
+  ]) {
+    const error = rejectedPlayUrl(input);
+    assert.equal(error.code, "unofficial-play-url", input);
+    assert.match(error.message, /仅支持官方/, input);
+    assert.match(error.message, /ai-passport\.folotoy\.cn/, input);
+    assert.match(error.message, /本地文件/, input);
+  }
+});
+
+test("rejects unsupported official paths without treating them as a source error", () => {
+  for (const input of [
+    "https://ai-passport.folotoy.cn/",
+    "https://ai-passport.folotoy.cn/about",
+    "https://ai-passport.folotoy.cn/plays/",
+    "https://ai-passport.folotoy.cn/api/plays?q=flag",
+    "https://ai-passport.folotoy.cn/plays/not_a_slug!/",
+    "https://ai-passport.folotoy.cn/plays/281/comments/",
+    "http://[",
+  ]) {
+    const error = rejectedPlayUrl(input);
+    assert.equal(error.code, "unsupported-play-url", input);
+    assert.match(error.message, /玩法详情页/, input);
+    assert.match(error.message, /\/api\/plays\/id\//, input);
+  }
+});
+
+test("points firmware file links and local .bin paths to the local file source", () => {
+  for (const input of [
+    "https://github.com/yishan/cover-arts-launcher/releases/download/v1.6.0/launcher.bin",
+    "https://ai-passport.folotoy.cn/api/download/community/meta-pass",
+    "https://example.com/firmware.bin",
+  ]) {
+    const error = rejectedPlayUrl(input);
+    assert.equal(error.code, "firmware-file-url", input);
+    assert.match(error.message, /本地文件/, input);
+  }
+  for (const input of ["./app.bin", "app.bin", "C:\\firmware\\play.bin", "file:///tmp/play.bin"]) {
+    const error = rejectedPlayUrl(input);
+    assert.equal(error.code, "local-firmware-path", input);
+    assert.match(error.message, /本地文件/, input);
+  }
 });
 
 test("file pages call the localhost manager while hosted pages stay same-origin", () => {
