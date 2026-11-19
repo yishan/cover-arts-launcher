@@ -37,6 +37,23 @@ test("Cloudflare Play function maps an official detail URL to the public API", a
   }
 });
 
+test("Cloudflare Play function distinguishes source and path errors in Chinese", async () => {
+  const sourceUrl = "https://cover-arts-launcher.pages.dev/api/play?url="
+    + encodeURIComponent("https://example.com/plays/281/");
+  const sourceResponse = await playHandler({ request: new Request(sourceUrl) });
+  assert.equal(sourceResponse.status, 400);
+  const sourceError = await sourceResponse.text();
+  assert.match(sourceError, /仅支持官方/);
+  assert.match(sourceError, /ai-passport\.folotoy\.cn/);
+  assert.match(sourceError, /本地文件/);
+
+  const pathUrl = "https://cover-arts-launcher.pages.dev/api/play?url="
+    + encodeURIComponent("https://ai-passport.folotoy.cn/");
+  const pathResponse = await playHandler({ request: new Request(pathUrl) });
+  assert.equal(pathResponse.status, 400);
+  assert.match(await pathResponse.text(), /玩法详情页/);
+});
+
 test("Cloudflare catalog function forwards only normalized title and category filters", async () => {
   const originalFetch = globalThis.fetch;
   let requested = "";

@@ -96,6 +96,40 @@ test("Vercel resource function fails closed for an external target", async () =>
   assert.match(response.body.toString(), /Only official/);
 });
 
+test("Vercel Play function returns actionable Chinese prompts without fetching", async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = async () => {
+    fetchCalls += 1;
+    throw new Error("fetch must not run");
+  };
+  try {
+    const sourceResponse = responseRecorder();
+    await playHandler({
+      method: "GET",
+      url: "/api/play?url=https%3A%2F%2Fexample.com%2Fplays%2F281%2F",
+      headers: { host: "preview.vercel.app" },
+    }, sourceResponse);
+    assert.equal(sourceResponse.statusCode, 400);
+    const sourceError = JSON.parse(sourceResponse.body.toString()).error;
+    assert.match(sourceError, /仅支持官方/);
+    assert.match(sourceError, /ai-passport\.folotoy\.cn/);
+    assert.match(sourceError, /本地文件/);
+
+    const pathResponse = responseRecorder();
+    await playHandler({
+      method: "GET",
+      url: "/api/play?url=https%3A%2F%2Fai-passport.folotoy.cn%2F",
+      headers: { host: "preview.vercel.app" },
+    }, pathResponse);
+    assert.equal(pathResponse.statusCode, 400);
+    assert.match(JSON.parse(pathResponse.body.toString()).error, /玩法详情页/);
+    assert.equal(fetchCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("Vercel functions reject non-GET methods", async () => {
   const response = responseRecorder();
   await playHandler({ method: "POST", url: "/api/play", headers: { host: "preview.vercel.app" } }, response);
