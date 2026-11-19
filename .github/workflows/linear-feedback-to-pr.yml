@@ -15,8 +15,17 @@ on:
         required: false
         default: "auto-pr"
         type: string
+      provider:
+        description: "Agent provider override (auto uses AGENT_PROVIDER variable or deepseek)"
+        required: false
+        default: "auto"
+        type: choice
+        options:
+          - auto
+          - deepseek
+          - codex
       dry_run:
-        description: "Run Codex and validation without pushing a branch or opening a PR"
+        description: "Run agent and validation without pushing a branch or opening a PR"
         required: false
         default: false
         type: boolean
@@ -39,17 +48,38 @@ jobs:
       found: ${{ steps.select.outputs.found }}
       issue_identifier: ${{ steps.select.outputs.issue_identifier }}
       branch: ${{ steps.select.outputs.branch }}
+      provider: ${{ steps.secrets_check.outputs.provider }}
     steps:
-      - name: Check required secrets
+      - name: Check required secrets and resolve provider
         id: secrets_check
         env:
           HAS_LINEAR_KEY: ${{ secrets.LINEAR_API_KEY != '' }}
+          HAS_DEEPSEEK_KEY: ${{ secrets.DEEPSEEK_API_KEY != '' }}
           HAS_OPENAI_KEY: ${{ secrets.OPENAI_API_KEY != '' }}
+          PROVIDER_INPUT: ${{ inputs.provider || 'auto' }}
+          PROVIDER_VAR: ${{ vars.AGENT_PROVIDER || 'deepseek' }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
-          if [[ "${HAS_LINEAR_KEY}" != "true" || "${HAS_OPENAI_KEY}" != "true" ]]; then
+          if [[ "${PROVIDER_INPUT}" == "auto" || -z "${PROVIDER_INPUT}" ]]; then
+            provider="${PROVIDER_VAR}"
+          else
+            provider="${PROVIDER_INPUT}"
+          fi
+          echo "provider=${provider}" >> "$GITHUB_OUTPUT"
+
+          missing=""
+          if [[ "${HAS_LINEAR_KEY}" != "true" ]]; then
+            missing="LINEAR_API_KEY"
+          fi
+          if [[ "${provider}" == "codex" && "${HAS_OPENAI_KEY}" != "true" ]]; then
+            missing="${missing:+${missing}, }OPENAI_API_KEY"
+          elif [[ "${provider}" != "codex" && "${HAS_DEEPSEEK_KEY}" != "true" ]]; then
+            missing="${missing:+${missing}, }DEEPSEEK_API_KEY"
+          fi
+
+          if [[ -n "${missing}" ]]; then
             echo "ready=false" >> "$GITHUB_OUTPUT"
-            msg="Skipping run: configure repository secrets LINEAR_API_KEY and OPENAI_API_KEY first."
+            msg="Skipping run (provider=${provider}): configure repository secrets ${missing} first."
             echo "${msg}" >> "$GITHUB_STEP_SUMMARY"
             if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
               echo "::error::${msg}"
@@ -73,6 +103,7 @@ jobs:
           LINEAR_AUTO_LABEL: ${{ inputs.label || vars.LINEAR_AUTO_LABEL || 'auto-pr' }}
           LINEAR_PROCESSED_LABEL: ${{ vars.LINEAR_PROCESSED_LABEL || 'pr-opened' }}
           EXPLICIT_ISSUE_ID: ${{ inputs.issue_id || '' }}
+          PROVIDER: ${{ steps.secrets_check.outputs.provider }}
         run: |
           set -euo pipefail
           open_branches="$(gh pr list --state open --limit 100 --json headRefName --jq '[.[].headRefName] | join(",")')"
@@ -92,7 +123,7 @@ jobs:
             branch="$(python3 -c 'import json, sys; d=json.load(open(sys.argv[1])); print(d["issue"]["branch"])' "$RUNNER_TEMP/selected-issue.json")"
             echo "issue_identifier=${ident}" >> "$GITHUB_OUTPUT"
             echo "branch=${branch}" >> "$GITHUB_OUTPUT"
-            echo "Selected Linear issue **${ident}** -> branch \`${branch}\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "Selected Linear issue **${ident}** -> branch \`${branch}\` (provider: \`${PROVIDER}\`)" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "No eligible Linear feedback issues found in ${LINEAR_TEAM_KEY} / ${LINEAR_PROJECT_NAME} with label \`${LINEAR_AUTO_LABEL}\`." >> "$GITHUB_STEP_SUMMARY"
           fi
@@ -107,7 +138,7 @@ jobs:
           retention-days: 3
 
   solve-issue:
-    name: Solve issue with Codex (pstack + Emil skills)
+    name: Solve issue with AI agent (pstack + Emil skills)
     needs: select-issue
     if: needs.select-issue.outputs.found == 'true'
     runs-on: ubuntu-latest
@@ -131,22 +162,58 @@ jobs:
           actionlint_bin="$(./tools/install-actionlint.sh "$RUNNER_TEMP/actionlint")"
           echo "ACTIONLINT_BIN=${actionlint_bin}" >> "$GITHUB_ENV"
 
-      - name: Install pinned pstack, Emil, and Passport skills for Codex
+      - name: Install pinned pstack, Emil, and Passport skills
         run: |
-          python3 tools/install_feedback_skills.py
-          python3 tools/install_feedback_skills.py --check
+          python3 tools/install_feedback_skills.py --all-harnesses
+          python3 tools/install_feedback_skills.py --all-harnesses --check
 
-      - name: Build Codex prompt
+      - name: Build agent prompt
         run: |
           python3 tools/linear_feedback.py build-prompt \
             --issue-json "$RUNNER_TEMP/selected-issue.json" \
-            --output "$RUNNER_TEMP/codex-prompt.md"
+            --output "$RUNNER_TEMP/agent-prompt.md"
+
+      - name: Install Claude Code CLI (DeepSeek / Anthropic-compatible mode)
+        if: needs.select-issue.outputs.provider != 'codex'
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          claude --version
+
+      - name: Run Claude Code CLI via DeepSeek Anthropic-compatible API
+        if: needs.select-issue.outputs.provider != 'codex'
+        env:
+          ANTHROPIC_BASE_URL: ${{ vars.ANTHROPIC_BASE_URL || 'https://api.deepseek.com/anthropic' }}
+          ANTHROPIC_AUTH_TOKEN: ${{ secrets.DEEPSEEK_API_KEY }}
+          ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL || 'deepseek-flash[1m]' }}
+          ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ vars.ANTHROPIC_MODEL || 'deepseek-flash[1m]' }}
+          ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ vars.ANTHROPIC_MODEL || 'deepseek-flash[1m]' }}
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: ${{ vars.ANTHROPIC_MODEL || 'deepseek-flash[1m]' }}
+          CLAUDE_CODE_SUBAGENT_MODEL: ${{ vars.ANTHROPIC_MODEL || 'deepseek-flash[1m]' }}
+          CLAUDE_CODE_EFFORT_LEVEL: ${{ vars.CLAUDE_CODE_EFFORT_LEVEL || 'high' }}
+          CLAUDE_CODE_MAX_TURNS: ${{ vars.CLAUDE_CODE_MAX_TURNS || '40' }}
+        run: |
+          set -euo pipefail
+          schema_json="$(cat tools/feedback_pr_output_schema.json)"
+          claude -p \
+            --no-session-persistence \
+            --permission-mode dontAsk \
+            --allowedTools "Read,Edit,Write,Glob,Grep,Bash" \
+            --max-turns "${CLAUDE_CODE_MAX_TURNS}" \
+            --output-format json \
+            --json-schema "${schema_json}" \
+            < "$RUNNER_TEMP/agent-prompt.md" \
+            > "$RUNNER_TEMP/claude-raw.json"
+
+          python3 tools/linear_feedback.py extract-claude-result \
+            --input "$RUNNER_TEMP/claude-raw.json" \
+            --output "$RUNNER_TEMP/codex-result.json"
 
       - name: Run OpenAI Codex CLI
+        if: needs.select-issue.outputs.provider == 'codex'
         uses: openai/codex-action@306c6a196a99dcc6582530c396a19d2672d5e9ec # v1
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          prompt-file: ${{ runner.temp }}/codex-prompt.md
+          prompt-file: ${{ runner.temp }}/agent-prompt.md
           output-file: ${{ runner.temp }}/codex-result.json
           output-schema-file: tools/feedback_pr_output_schema.json
           permission-profile: ":workspace"
@@ -165,7 +232,7 @@ jobs:
             exit 1
           fi
 
-      - name: Package diff and Codex summary
+      - name: Package diff and agent summary
         id: package_patch
         run: |
           set -euo pipefail
@@ -179,7 +246,7 @@ jobs:
           codex_status="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1])).get("status", "needs_clarification"))' "$RUNNER_TEMP/codex-result.json")"
           echo "codex_status=${codex_status}" >> "$GITHUB_OUTPUT"
 
-      - name: Upload patch and Codex result
+      - name: Upload patch and agent result
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: codex-output-${{ github.run_id }}
@@ -205,7 +272,7 @@ jobs:
         with:
           token: ${{ secrets.PR_WORKFLOW_TOKEN || github.token }}
 
-      - name: Download Codex artifacts
+      - name: Download agent artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: codex-output-${{ github.run_id }}
@@ -284,4 +351,4 @@ jobs:
       - name: Dry-run summary
         if: inputs.dry_run == true
         run: |
-          echo "Dry run completed for **${{ needs.select-issue.outputs.issue_identifier }}** (status: \`${{ needs.solve-issue.outputs.codex_status }}\`, static: \`${{ needs.solve-issue.outputs.static_status }}\`). No branch, PR, or Linear update was written." >> "$GITHUB_STEP_SUMMARY"
+          echo "Dry run completed for **${{ needs.select-issue.outputs.issue_identifier }}** (provider: \`${{ needs.select-issue.outputs.provider }}\`, status: \`${{ needs.solve-issue.outputs.codex_status }}\`, static: \`${{ needs.solve-issue.outputs.static_status }}\`). No branch, PR, or Linear update was written." >> "$GITHUB_STEP_SUMMARY"

@@ -17,17 +17,19 @@ automates turning user feedback issues from the Linear `SAAN` team's
    `pr-opened` or linked to an open `feedback/<issue-id>` PR.
 2. **Solve (`solve-issue`)**: Runs in a read-only GitHub permissions job
    (`contents: read`, without `LINEAR_API_KEY`). It installs SHA-pinned skills
-   into `~/.agents/skills/` via
+   into both `~/.agents/skills/` and `~/.claude/skills/` via
    [`tools/install_feedback_skills.py`](../../../tools/install_feedback_skills.py),
-   runs OpenAI Codex CLI via `openai/codex-action` (`permission-profile: ":workspace"`,
-   `safety-strategy: drop-sudo`), validates with `./tools/validate.sh --static`,
-   and uploads the patch and structured result JSON.
+   runs either **Claude Code CLI via DeepSeek's Anthropic-compatible API**
+   (default `AGENT_PROVIDER=deepseek`) or **OpenAI Codex CLI**
+   (`AGENT_PROVIDER=codex` via `openai/codex-action`), validates with
+   `./tools/validate.sh --static`, and uploads the patch and structured result JSON.
 3. **Publish (`publish-draft-pr`)**: Runs in a separate job without
-   `OPENAI_API_KEY`, applies the patch to `feedback/<issue-id>`, re-runs
-   `./tools/validate.sh --static`, opens or updates a **Draft PR**, and posts an
-   idempotent comment (plus the `pr-opened` label) back to the Linear issue. If
-   Codex reports `needs_clarification`, no PR is opened and clarification
-   questions are posted on the Linear issue instead.
+   `DEEPSEEK_API_KEY` or `OPENAI_API_KEY`, applies the patch to
+   `feedback/<issue-id>`, re-runs `./tools/validate.sh --static`, opens or
+   updates a **Draft PR**, and posts an idempotent comment (plus the `pr-opened`
+   label) back to the Linear issue. If the agent reports `needs_clarification`,
+   no PR is opened and clarification questions are posted on the Linear issue
+   instead.
 
 ## Curated skills installed automatically
 
@@ -44,7 +46,8 @@ automates turning user feedback issues from the Linear `SAAN` team's
 Configure under **Settings -> Secrets and variables -> Actions -> Secrets**:
 
 - `LINEAR_API_KEY` (required): Linear personal API key or OAuth token with read/write access to `SAAN` issues and comments.
-- `OPENAI_API_KEY` (required): OpenAI API key used by `openai/codex-action` behind its local Responses API proxy.
+- `DEEPSEEK_API_KEY` (required when `AGENT_PROVIDER=deepseek`, the default): DeepSeek API key used with Claude Code CLI via `https://api.deepseek.com/anthropic` (or another Anthropic-compatible endpoint configured in `ANTHROPIC_BASE_URL`).
+- `OPENAI_API_KEY` (required when `AGENT_PROVIDER=codex`): OpenAI API key used by `openai/codex-action` behind its local Responses API proxy.
 - `PR_WORKFLOW_TOKEN` (optional): Fine-grained PAT or GitHub App token with `contents: write` and `pull-requests: write`. When set, Draft PRs created by this workflow automatically trigger `Static checks` and `Firmware checks` (GitHub suppresses `pull_request` workflows triggered by the default `GITHUB_TOKEN`).
 
 ### 2. GitHub Actions permissions
@@ -58,13 +61,18 @@ you want to override the defaults:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
+| `AGENT_PROVIDER` | `deepseek` | Agent runner: `deepseek` (Claude Code CLI + Anthropic-compatible API) or `codex` (OpenAI Codex CLI) |
+| `ANTHROPIC_BASE_URL` | `https://api.deepseek.com/anthropic` | Anthropic-compatible base URL (switchable to Kimi, GLM, OpenRouter, etc.) |
+| `ANTHROPIC_MODEL` | `deepseek-flash[1m]` | Model mapped across Claude Code main and subagent roles (for example `deepseek-v4-pro`) |
+| `CLAUDE_CODE_EFFORT_LEVEL` | `high` | Reasoning effort for Claude Code CLI (`medium`, `high`, `max`) |
+| `CLAUDE_CODE_MAX_TURNS` | `40` | Maximum tool-use turns per run to cap token spend |
 | `LINEAR_TEAM_KEY` | `SAAN` | Linear team key |
 | `LINEAR_PROJECT_NAME` | `CoverArts Launcher` | Linear project name |
 | `LINEAR_AUTO_LABEL` | `auto-pr` | Opt-in label required for automatic pickup |
 | `LINEAR_PROCESSED_LABEL` | `pr-opened` | Label added once a Draft PR is created |
 | `LINEAR_TARGET_STATE` | *(empty)* | Optional Linear workflow state name to transition to (for example `In Review`) |
-| `CODEX_MODEL` | *(action default)* | Optional OpenAI Codex model override |
-| `CODEX_EFFORT` | *(action default)* | Optional reasoning effort override |
+| `CODEX_MODEL` | *(action default)* | Optional OpenAI Codex model override (when `AGENT_PROVIDER=codex`) |
+| `CODEX_EFFORT` | *(action default)* | Optional Codex reasoning effort override (when `AGENT_PROVIDER=codex`) |
 
 ## Manual runs (CI or local)
 

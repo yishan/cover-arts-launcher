@@ -219,6 +219,20 @@ class LinearFeedbackTests(unittest.TestCase):
         self.assertEqual(schema["type"], "object")
         self.assertIn("skills_applied", schema["required"])
 
+    def test_extract_claude_output(self) -> None:
+        direct = lf.extract_claude_output(
+            {"is_error": False, "structured_output": {"status": "ready_for_pr"}}
+        )
+        self.assertEqual(direct["status"], "ready_for_pr")
+
+        fenced = lf.extract_claude_output(
+            {"is_error": False, "result": 'Done:\n```json\n{"status": "no_changes_needed"}\n```'}
+        )
+        self.assertEqual(fenced["status"], "no_changes_needed")
+
+        with self.assertRaises(ValueError):
+            lf.extract_claude_output({"is_error": True, "result": "rate limit"})
+
 
 if __name__ == "__main__":
     unittest.main()

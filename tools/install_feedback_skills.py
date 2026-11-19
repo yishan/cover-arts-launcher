@@ -146,7 +146,9 @@ def fetch_pinned_repo(repo_url: str, commit_sha: str, checkout_dir: Path) -> Non
     )
 
 
-def install_external_pack(pack: ExternalSkillPack, dest: Path, *, dry_run: bool = False) -> list[str]:
+def install_external_pack_multi(
+    pack: ExternalSkillPack, destinations: list[Path], *, dry_run: bool = False
+) -> list[str]:
     if dry_run:
         return list(pack.skill_names)
     with tempfile.TemporaryDirectory(prefix="feedback-skill-pack-") as tmp:
@@ -155,9 +157,14 @@ def install_external_pack(pack: ExternalSkillPack, dest: Path, *, dry_run: bool 
         installed: list[str] = []
         for name in pack.skill_names:
             source = checkout_dir / pack.skills_subdir / name
-            copy_skill_dir(source, dest / name)
+            for dest in destinations:
+                copy_skill_dir(source, dest / name)
             installed.append(name)
         return installed
+
+
+def install_external_pack(pack: ExternalSkillPack, dest: Path, *, dry_run: bool = False) -> list[str]:
+    return install_external_pack_multi(pack, [dest], dry_run=dry_run)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -165,13 +172,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--dest",
         type=Path,
-        default=Path.home() / ".agents" / "skills",
-        help="Destination directory scanned by Codex CLI (default: ~/.agents/skills)",
+        action="append",
+        default=None,
+        help="Destination directory (repeatable; default: ~/.agents/skills)",
+    )
+    parser.add_argument(
+        "--all-harnesses",
+        action="store_true",
+        help="Install into both ~/.agents/skills (Codex) and ~/.claude/skills (Claude Code)",
     )
     parser.add_argument(
         "--check",
         action="store_true",
-        help="Verify all curated skills are installed in --dest without modifying files",
+        help="Verify all curated skills are installed in destination(s) without modifying files",
     )
     parser.add_argument(
         "--dry-run",
@@ -191,26 +204,47 @@ def main(argv: list[str] | None = None) -> int:
             print(f"ERROR: {err}", file=sys.stderr)
         return 1
 
+    if args.all_harnesses:
+        destinations = [
+            Path.home() / ".agents" / "skills",
+            Path.home() / ".claude" / "skills",
+        ]
+    elif args.dest:
+        destinations = args.dest
+    else:
+        destinations = [Path.home() / ".agents" / "skills"]
+
     if args.check:
-        installed, missing = inspect_destination(args.dest)
-        print(f"Destination: {args.dest}")
-        print(f"Installed ({len(installed)}/{len(expected_skill_names())}): {', '.join(installed) or 'none'}")
-        if missing:
-            print(f"Missing ({len(missing)}): {', '.join(missing)}", file=sys.stderr)
-            return 1
-        return 0
+        rc = 0
+        for dest in destinations:
+            installed, missing = inspect_destination(dest)
+            print(f"Destination: {dest}")
+            print(
+                f"Installed ({len(installed)}/{len(expected_skill_names())}): "
+                f"{', '.join(installed) or 'none'}"
+            )
+            if missing:
+                print(f"Missing ({len(missing)}): {', '.join(missing)}", file=sys.stderr)
+                rc = 1
+        return rc
 
     if not args.dry_run:
-        args.dest.mkdir(parents=True, exist_ok=True)
+        for dest in destinations:
+            dest.mkdir(parents=True, exist_ok=True)
 
-    local = install_local_skills(args.dest, dry_run=args.dry_run)
     action = "Would install" if args.dry_run else "Installed"
-    print(f"{action} local skills ({len(local)}): {', '.join(local)}")
+    dest_summary = ", ".join(str(d) for d in destinations)
+    for dest in destinations:
+        local = install_local_skills(dest, dry_run=args.dry_run)
+    print(f"{action} local skills ({len(local)}) into [{dest_summary}]: {', '.join(local)}")
 
     if not args.local_only:
         for pack in EXTERNAL_PACKS:
-            names = install_external_pack(pack, args.dest, dry_run=args.dry_run)
-            print(f"{action} {pack.name}@{pack.commit_sha[:12]} ({len(names)}): {', '.join(names)}")
+            names = install_external_pack_multi(pack, destinations, dry_run=args.dry_run)
+            print(
+                f"{action} {pack.name}@{pack.commit_sha[:12]} ({len(names)}) "
+                f"into [{dest_summary}]: {', '.join(names)}"
+            )
 
     return 0
 

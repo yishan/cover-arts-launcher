@@ -659,6 +659,40 @@ def cmd_notify(args: argparse.Namespace) -> int:
     return 0
 
 
+def extract_claude_output(envelope: dict[str, Any]) -> dict[str, Any]:
+    """Extract normalized feedback result JSON from `claude -p --output-format json`."""
+    if envelope.get("is_error"):
+        detail = str(envelope.get("result") or "Claude CLI reported is_error=true")
+        raise ValueError(f"Claude CLI run failed: {detail}")
+
+    structured = envelope.get("structured_output")
+    if isinstance(structured, dict):
+        return structured
+
+    raw_result = str(envelope.get("result") or "").strip()
+    if raw_result:
+        fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw_result, re.DOTALL)
+        candidate = fenced.group(1) if fenced else raw_result
+        try:
+            parsed = json.loads(candidate)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+
+    raise ValueError("Claude CLI output missing structured_output JSON object")
+
+
+def cmd_extract_claude_result(args: argparse.Namespace) -> int:
+    envelope = json.loads(Path(args.input).read_text(encoding="utf-8"))
+    extracted = extract_claude_output(envelope)
+    Path(args.output).write_text(
+        json.dumps(extracted, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -678,7 +712,7 @@ def build_parser() -> argparse.ArgumentParser:
     prompt.add_argument("--output", required=True)
     prompt.set_defaults(func=cmd_build_prompt)
 
-    fmt = subparsers.add_parser("format-pr", help="Render PR title and body from Codex output")
+    fmt = subparsers.add_parser("format-pr", help="Render PR title and body from agent output")
     fmt.add_argument("--issue-json", required=True)
     fmt.add_argument("--codex-json", required=True)
     fmt.add_argument("--static-status", default="PASS")
@@ -696,6 +730,14 @@ def build_parser() -> argparse.ArgumentParser:
     notify.add_argument("--add-label", default="")
     notify.add_argument("--target-state", default="")
     notify.set_defaults(func=cmd_notify)
+
+    extract = subparsers.add_parser(
+        "extract-claude-result",
+        help="Extract structured JSON result from Claude Code CLI output",
+    )
+    extract.add_argument("--input", required=True)
+    extract.add_argument("--output", required=True)
+    extract.set_defaults(func=cmd_extract_claude_result)
 
     return parser
 

@@ -42,6 +42,16 @@ class InstallFeedbackSkillsTests(unittest.TestCase):
             self.assertEqual(rc, 0)
             self.assertFalse(dest.exists())
 
+    def test_multi_dest_local_only_cli(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="test-feedback-multi-") as tmp:
+            dest_a = Path(tmp) / "agents-skills"
+            dest_b = Path(tmp) / "claude-skills"
+            rc = ifs.main(["--dest", str(dest_a), "--dest", str(dest_b), "--local-only"])
+            self.assertEqual(rc, 0)
+            for dest in (dest_a, dest_b):
+                for name in ifs.LOCAL_SKILL_NAMES:
+                    self.assertTrue((dest / name / "SKILL.md").is_file())
+
 
 if __name__ == "__main__":
     unittest.main()

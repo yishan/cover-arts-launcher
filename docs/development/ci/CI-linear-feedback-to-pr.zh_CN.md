@@ -17,13 +17,15 @@
 2. **求解（`solve-issue`）**：在只读仓库权限（`contents: read`，不注入
    `LINEAR_API_KEY`）下运行。通过
    [`tools/install_feedback_skills.py`](../../../tools/install_feedback_skills.py)
-   将固定提交 SHA 的精选技能安装到 `~/.agents/skills/`，调用
-   `openai/codex-action`（`permission-profile: ":workspace"`、`safety-strategy: drop-sudo`）
-   运行 OpenAI Codex CLI，执行 `./tools/validate.sh --static` 验证，并上传补丁与结构化结果。
-3. **发布（`publish-draft-pr`）**：在不注入 `OPENAI_API_KEY` 的独立任务中，将补丁
-   应用到 `feedback/<issue-id>` 分支，二次运行 `./tools/validate.sh --static`，创建
-   或更新 **Draft PR**，并向对应 Linear issue 幂等回写评论与 `pr-opened` 标签。若
-   Codex 判定为 `needs_clarification`，则不创建空 PR，而是在 Linear 评论中提出澄清问题。
+   将固定提交 SHA 的精选技能同时安装到 `~/.agents/skills/` 与 `~/.claude/skills/`，
+   默认调用 **Claude Code CLI + DeepSeek Anthropic 兼容接口**（`AGENT_PROVIDER=deepseek`），
+   也可切换为 **OpenAI Codex CLI**（`AGENT_PROVIDER=codex`），执行
+   `./tools/validate.sh --static` 验证，并上传补丁与结构化结果。
+3. **发布（`publish-draft-pr`）**：在不注入 `DEEPSEEK_API_KEY` / `OPENAI_API_KEY`
+   的独立任务中，将补丁应用到 `feedback/<issue-id>` 分支，二次运行
+   `./tools/validate.sh --static`，创建或更新 **Draft PR**，并向对应 Linear issue
+   幂等回写评论与 `pr-opened` 标签。若 Agent 判定为 `needs_clarification`，则不创建空
+   PR，而是在 Linear 评论中提出澄清问题。
 
 ## 自动安装的精选技能
 
@@ -40,7 +42,8 @@
 在 **Settings -> Secrets and variables -> Actions -> Secrets** 中添加：
 
 - `LINEAR_API_KEY`（必需）：具备 `SAAN` 团队 issue 与评论读写权限的 Linear API Key。
-- `OPENAI_API_KEY`（必需）：供 `openai/codex-action` 通过本地 Responses API 代理调用的 OpenAI API Key。
+- `DEEPSEEK_API_KEY`（`AGENT_PROVIDER=deepseek` 时必需，默认模式）：用于 Claude Code CLI 通过 `https://api.deepseek.com/anthropic`（或自定义的 `ANTHROPIC_BASE_URL`）调用模型。
+- `OPENAI_API_KEY`（`AGENT_PROVIDER=codex` 时必需）：供 `openai/codex-action` 通过本地 Responses API 代理调用。
 - `PR_WORKFLOW_TOKEN`（可选）：具备 `contents: write` 与 `pull-requests: write` 权限的 Fine-grained PAT 或 GitHub App Token。配置后，自动创建的 Draft PR 会立即触发 `Static checks` 与 `Firmware checks`（使用默认 `GITHUB_TOKEN` 创建的 PR 不会自动触发 `pull_request` 工作流）。
 
 ### 2. 开启 GitHub Actions 创建 PR 权限
@@ -54,13 +57,18 @@
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
+| `AGENT_PROVIDER` | `deepseek` | 执行器：`deepseek`（Claude Code CLI + Anthropic 兼容接口）或 `codex`（OpenAI Codex CLI） |
+| `ANTHROPIC_BASE_URL` | `https://api.deepseek.com/anthropic` | Anthropic 兼容接口地址（可替换为 Kimi、GLM、OpenRouter 等） |
+| `ANTHROPIC_MODEL` | `deepseek-flash[1m]` | 映射到 Claude Code 主模型及子代理的模型名（例如 `deepseek-v4-pro`） |
+| `CLAUDE_CODE_EFFORT_LEVEL` | `high` | Claude Code CLI 推理强度（`medium`、`high`、`max`） |
+| `CLAUDE_CODE_MAX_TURNS` | `40` | 单次运行最大工具轮数上限，用于控制费用 |
 | `LINEAR_TEAM_KEY` | `SAAN` | Linear 团队键 |
 | `LINEAR_PROJECT_NAME` | `CoverArts Launcher` | Linear 项目名称 |
 | `LINEAR_AUTO_LABEL` | `auto-pr` | 自动拾取所需的准入标签 |
 | `LINEAR_PROCESSED_LABEL` | `pr-opened` | 创建 Draft PR 后自动追加的去重标签 |
 | `LINEAR_TARGET_STATE` | *（空）* | 可选的 Linear 目标状态名称（如 `In Review`） |
-| `CODEX_MODEL` | *（action 默认）* | 可选的 OpenAI Codex 模型覆盖 |
-| `CODEX_EFFORT` | *（action 默认）* | 可选的推理强度覆盖 |
+| `CODEX_MODEL` | *（action 默认）* | 可选的 OpenAI Codex 模型覆盖（`AGENT_PROVIDER=codex` 时生效） |
+| `CODEX_EFFORT` | *（action 默认）* | 可选的 Codex 推理强度覆盖（`AGENT_PROVIDER=codex` 时生效） |
 
 ## 手动触发（CI 或本地）
 
