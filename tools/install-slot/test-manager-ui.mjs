@@ -58,6 +58,12 @@ test("official source supports title search, category browsing, and accessible c
   assert.match(css, /@media \(max-width: 620px\)[\s\S]*\.catalog-grid/);
 });
 
+test("selected official titles are adapted to the device font before prefill", () => {
+  assert.match(app, /\$\("#play-title"\)\.value = play\.deviceTitle;\s*\n\s*updateTitleCheck\(\);/);
+  assert.match(app, /describeTitleChanges\(play\.deviceTitleChanges\)/);
+  assert.match(app, /替换为「空格」|已移除/);
+});
+
 test("system installation begins with the official Launcher discovery step", () => {
   assert.match(html, /<span class="step-index"[^>]*>01<\/span>[\s\S]*?从官网获取启动器/);
   assert.match(html, /id="launcher-store-link"[^>]+aria-disabled="true"[^>]*>Cover-Arts 启动器<\/a>/);
