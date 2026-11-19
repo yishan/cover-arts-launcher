@@ -8,10 +8,14 @@
     "deploy:cloudflare": "npm run build:cloudflare && wrangler pages deploy dist",
     "start": "node server.mjs",
     "test": "node --test test-*.mjs",
-    "vendor:esptool": "node vendor-esptool.mjs"
+    "vendor:esptool": "node vendor-esptool.mjs",
+    "vendor:analytics": "node vendor-analytics.mjs"
   },
   "devDependencies": {
     "esptool-js": "0.6.1",
     "wrangler": "4.137.0"
+  },
+  "dependencies": {
+    "@vercel/analytics": "^2.0.1"
   }
 }
