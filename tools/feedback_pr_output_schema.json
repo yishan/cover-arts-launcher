@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "pr_title",
+    "summary",
+    "root_cause",
+    "area",
+    "skills_applied",
+    "verification",
+    "unverified",
+    "clarification_questions"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["ready_for_pr", "needs_clarification", "no_changes_needed"]
+    },
+    "pr_title": {
+      "type": "string",
+      "description": "Conventional Commit title without trailing period."
+    },
+    "summary": {
+      "type": "string",
+      "description": "Concise summary of the user-facing change or triage outcome."
+    },
+    "root_cause": {
+      "type": "string",
+      "description": "Root-cause explanation for the feedback item."
+    },
+    "area": {
+      "type": "string",
+      "enum": ["manager-ui", "firmware", "both", "docs-or-tooling"]
+    },
+    "skills_applied": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["static_checks", "firmware_build", "notes"],
+      "properties": {
+        "static_checks": {
+          "type": "string",
+          "enum": ["PASS", "FAIL", "NOT RUN"]
+        },
+        "firmware_build": {
+          "type": "string",
+          "enum": ["PASS", "FAIL", "NOT RUN"]
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "unverified": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "clarification_questions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

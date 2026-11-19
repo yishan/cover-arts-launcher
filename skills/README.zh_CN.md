@@ -35,6 +35,7 @@
 | [experience-pr](experience-pr/SKILL.zh_CN.md) | 发布后，收集可复用的开发经验，并作为文档 PR 提交。 |
 | [plays-archive](plays-archive/SKILL.zh_CN.md) | 发布后，把已发布应用归档到上游 `plays/`，附 AI 生成的双语说明与封面图。 |
 | [ai-passport-cover-arts-launcher](ai-passport-cover-arts-launcher/SKILL.zh_CN.md) | 检查或接入可选的 Cover Arts Launcher 返回能力，Up Long 不得影响玩法已有封面页之外的输入。 |
+| [linear-feedback-to-pr](linear-feedback-to-pr/SKILL.zh_CN.md) | 将 Linear `SAAN` / `CoverArts Launcher` 用户反馈转化为已验证 Draft PR，组合使用 `pstack`、`emilkowalski/skills` 与 AI Passport 技能。 |
 
 ## 必需准备，由 AI 自行完成
 

@@ -24,6 +24,7 @@ Each skill must contain at least `SKILL.md` with YAML frontmatter defining `name
 | [experience-pr](experience-pr/SKILL.md) | After a release, collect reusable development experience and submit it as a documentation pull request. |
 | [plays-archive](plays-archive/SKILL.md) | After a release, archive the published application into the upstream `plays/` with an AI-generated bilingual summary and a cover image. |
 | [ai-passport-cover-arts-launcher](ai-passport-cover-arts-launcher/SKILL.md) | Audit or add optional Cover Arts Launcher return support without reserving Up Long outside the play's existing cover page. |
+| [linear-feedback-to-pr](linear-feedback-to-pr/SKILL.md) | Turn a Linear user feedback issue from `SAAN` / `CoverArts Launcher` into a verified Draft PR using curated `pstack`, `emilkowalski/skills`, and AI Passport skills. |
 
 ## Required preparation, handled by the AI
 

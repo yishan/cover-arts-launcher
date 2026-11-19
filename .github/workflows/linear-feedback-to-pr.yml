@@ -1,0 +1,287 @@
+name: Linear feedback to Draft PR
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      issue_id:
+        description: "Optional Linear issue identifier (for example SAAN-42)"
+        required: false
+        default: ""
+        type: string
+      label:
+        description: "Opt-in Linear label to poll when issue_id is empty"
+        required: false
+        default: "auto-pr"
+        type: string
+      dry_run:
+        description: "Run Codex and validation without pushing a branch or opening a PR"
+        required: false
+        default: false
+        type: boolean
+
+permissions: {}
+
+concurrency:
+  group: linear-feedback-to-pr
+  cancel-in-progress: false
+
+jobs:
+  select-issue:
+    name: Select Linear feedback issue
+    if: github.repository == 'yishan/cover-arts-launcher'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      found: ${{ steps.select.outputs.found }}
+      issue_identifier: ${{ steps.select.outputs.issue_identifier }}
+      branch: ${{ steps.select.outputs.branch }}
+    steps:
+      - name: Check required secrets
+        id: secrets_check
+        env:
+          HAS_LINEAR_KEY: ${{ secrets.LINEAR_API_KEY != '' }}
+          HAS_OPENAI_KEY: ${{ secrets.OPENAI_API_KEY != '' }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [[ "${HAS_LINEAR_KEY}" != "true" || "${HAS_OPENAI_KEY}" != "true" ]]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            msg="Skipping run: configure repository secrets LINEAR_API_KEY and OPENAI_API_KEY first."
+            echo "${msg}" >> "$GITHUB_STEP_SUMMARY"
+            if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+              echo "::error::${msg}"
+              exit 1
+            fi
+            exit 0
+          fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        if: steps.secrets_check.outputs.ready == 'true'
+
+      - name: Select eligible Linear issue
+        id: select
+        if: steps.secrets_check.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+          LINEAR_TEAM_KEY: ${{ vars.LINEAR_TEAM_KEY || 'SAAN' }}
+          LINEAR_PROJECT_NAME: ${{ vars.LINEAR_PROJECT_NAME || 'CoverArts Launcher' }}
+          LINEAR_AUTO_LABEL: ${{ inputs.label || vars.LINEAR_AUTO_LABEL || 'auto-pr' }}
+          LINEAR_PROCESSED_LABEL: ${{ vars.LINEAR_PROCESSED_LABEL || 'pr-opened' }}
+          EXPLICIT_ISSUE_ID: ${{ inputs.issue_id || '' }}
+        run: |
+          set -euo pipefail
+          open_branches="$(gh pr list --state open --limit 100 --json headRefName --jq '[.[].headRefName] | join(",")')"
+          python3 tools/linear_feedback.py select \
+            --team "${LINEAR_TEAM_KEY}" \
+            --project "${LINEAR_PROJECT_NAME}" \
+            --label "${LINEAR_AUTO_LABEL}" \
+            --processed-label "${LINEAR_PROCESSED_LABEL}" \
+            --issue-id "${EXPLICIT_ISSUE_ID}" \
+            --exclude-branches "${open_branches}" \
+            --output "$RUNNER_TEMP/selected-issue.json"
+
+          found="$(python3 -c 'import json, sys; d=json.load(open(sys.argv[1])); print("true" if d.get("found") else "false")' "$RUNNER_TEMP/selected-issue.json")"
+          echo "found=${found}" >> "$GITHUB_OUTPUT"
+          if [[ "${found}" == "true" ]]; then
+            ident="$(python3 -c 'import json, sys; d=json.load(open(sys.argv[1])); print(d["issue"]["identifier"])' "$RUNNER_TEMP/selected-issue.json")"
+            branch="$(python3 -c 'import json, sys; d=json.load(open(sys.argv[1])); print(d["issue"]["branch"])' "$RUNNER_TEMP/selected-issue.json")"
+            echo "issue_identifier=${ident}" >> "$GITHUB_OUTPUT"
+            echo "branch=${branch}" >> "$GITHUB_OUTPUT"
+            echo "Selected Linear issue **${ident}** -> branch \`${branch}\`" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No eligible Linear feedback issues found in ${LINEAR_TEAM_KEY} / ${LINEAR_PROJECT_NAME} with label \`${LINEAR_AUTO_LABEL}\`." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload selected issue payload
+        if: steps.select.outputs.found == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: linear-issue-${{ github.run_id }}
+          path: ${{ runner.temp }}/selected-issue.json
+          if-no-files-found: error
+          retention-days: 3
+
+  solve-issue:
+    name: Solve issue with Codex (pstack + Emil skills)
+    needs: select-issue
+    if: needs.select-issue.outputs.found == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      codex_status: ${{ steps.package_patch.outputs.codex_status }}
+      has_changes: ${{ steps.package_patch.outputs.has_changes }}
+      static_status: ${{ steps.validate.outputs.static_status }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Download selected issue payload
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: linear-issue-${{ github.run_id }}
+          path: ${{ runner.temp }}
+
+      - name: Install verified actionlint
+        run: |
+          actionlint_bin="$(./tools/install-actionlint.sh "$RUNNER_TEMP/actionlint")"
+          echo "ACTIONLINT_BIN=${actionlint_bin}" >> "$GITHUB_ENV"
+
+      - name: Install pinned pstack, Emil, and Passport skills for Codex
+        run: |
+          python3 tools/install_feedback_skills.py
+          python3 tools/install_feedback_skills.py --check
+
+      - name: Build Codex prompt
+        run: |
+          python3 tools/linear_feedback.py build-prompt \
+            --issue-json "$RUNNER_TEMP/selected-issue.json" \
+            --output "$RUNNER_TEMP/codex-prompt.md"
+
+      - name: Run OpenAI Codex CLI
+        uses: openai/codex-action@306c6a196a99dcc6582530c396a19d2672d5e9ec # v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          prompt-file: ${{ runner.temp }}/codex-prompt.md
+          output-file: ${{ runner.temp }}/codex-result.json
+          output-schema-file: tools/feedback_pr_output_schema.json
+          permission-profile: ":workspace"
+          safety-strategy: drop-sudo
+          model: ${{ vars.CODEX_MODEL || '' }}
+          effort: ${{ vars.CODEX_EFFORT || '' }}
+
+      - name: Run static validation gate
+        id: validate
+        continue-on-error: true
+        run: |
+          if ./tools/validate.sh --static; then
+            echo "static_status=PASS" >> "$GITHUB_OUTPUT"
+          else
+            echo "static_status=FAIL" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      - name: Package diff and Codex summary
+        id: package_patch
+        run: |
+          set -euo pipefail
+          git add -N .
+          git diff --binary HEAD > "$RUNNER_TEMP/changes.patch"
+          if [[ -s "$RUNNER_TEMP/changes.patch" ]]; then
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          fi
+          codex_status="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1])).get("status", "needs_clarification"))' "$RUNNER_TEMP/codex-result.json")"
+          echo "codex_status=${codex_status}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload patch and Codex result
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: codex-output-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/selected-issue.json
+            ${{ runner.temp }}/codex-result.json
+            ${{ runner.temp }}/changes.patch
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-draft-pr:
+    name: Open Draft PR and update Linear
+    needs:
+      - select-issue
+      - solve-issue
+    if: always() && needs.select-issue.outputs.found == 'true' && needs.solve-issue.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          token: ${{ secrets.PR_WORKFLOW_TOKEN || github.token }}
+
+      - name: Download Codex artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: codex-output-${{ github.run_id }}
+          path: ${{ runner.temp }}
+
+      - name: Install verified actionlint
+        run: |
+          actionlint_bin="$(./tools/install-actionlint.sh "$RUNNER_TEMP/actionlint")"
+          echo "ACTIONLINT_BIN=${actionlint_bin}" >> "$GITHUB_ENV"
+
+      - name: Apply patch, re-verify, and open Draft PR
+        id: open_pr
+        if: needs.solve-issue.outputs.codex_status == 'ready_for_pr' && needs.solve-issue.outputs.has_changes == 'true' && needs.solve-issue.outputs.static_status == 'PASS' && inputs.dry_run != true
+        env:
+          GH_TOKEN: ${{ secrets.PR_WORKFLOW_TOKEN || github.token }}
+          BRANCH_NAME: ${{ needs.select-issue.outputs.branch }}
+          STATIC_STATUS: ${{ needs.solve-issue.outputs.static_status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          git checkout -B "${BRANCH_NAME}"
+          git apply --index "$RUNNER_TEMP/changes.patch"
+
+          # Defense in depth: re-run static checks on the clean checkout.
+          ./tools/validate.sh --static
+
+          python3 tools/linear_feedback.py format-pr \
+            --issue-json "$RUNNER_TEMP/selected-issue.json" \
+            --codex-json "$RUNNER_TEMP/codex-result.json" \
+            --static-status "${STATIC_STATUS}" \
+            --firmware-status "NOT RUN" \
+            --run-url "${RUN_URL}" \
+            --title-out "$RUNNER_TEMP/pr-title.txt" \
+            --body-out "$RUNNER_TEMP/pr-body.md"
+
+          pr_title="$(cat "$RUNNER_TEMP/pr-title.txt")"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "${pr_title}"
+          git push --force-with-lease origin "HEAD:${BRANCH_NAME}"
+
+          existing_pr="$(gh pr list --head "${BRANCH_NAME}" --state open --json url --jq '.[0].url // ""')"
+          if [[ -n "${existing_pr}" ]]; then
+            gh pr edit "${existing_pr}" --title "${pr_title}" --body-file "$RUNNER_TEMP/pr-body.md"
+            pr_url="${existing_pr}"
+          else
+            pr_url="$(gh pr create --draft --base main --head "${BRANCH_NAME}" --title "${pr_title}" --body-file "$RUNNER_TEMP/pr-body.md")"
+          fi
+          echo "pr_url=${pr_url}" >> "$GITHUB_OUTPUT"
+          echo "Draft PR ready: ${pr_url}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Notify Linear issue
+        if: inputs.dry_run != true
+        env:
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+          PR_URL: ${{ steps.open_pr.outputs.pr_url || '' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          LINEAR_PROCESSED_LABEL: ${{ vars.LINEAR_PROCESSED_LABEL || 'pr-opened' }}
+          LINEAR_TARGET_STATE: ${{ vars.LINEAR_TARGET_STATE || '' }}
+        run: |
+          set -euo pipefail
+          add_label=""
+          target_state=""
+          if [[ -n "${PR_URL}" ]]; then
+            add_label="${LINEAR_PROCESSED_LABEL}"
+            target_state="${LINEAR_TARGET_STATE}"
+          fi
+          python3 tools/linear_feedback.py notify \
+            --issue-json "$RUNNER_TEMP/selected-issue.json" \
+            --codex-json "$RUNNER_TEMP/codex-result.json" \
+            --pr-url "${PR_URL}" \
+            --run-url "${RUN_URL}" \
+            --add-label "${add_label}" \
+            --target-state "${target_state}"
+
+      - name: Dry-run summary
+        if: inputs.dry_run == true
+        run: |
+          echo "Dry run completed for **${{ needs.select-issue.outputs.issue_identifier }}** (status: \`${{ needs.solve-issue.outputs.codex_status }}\`, static: \`${{ needs.solve-issue.outputs.static_status }}\`). No branch, PR, or Linear update was written." >> "$GITHUB_STEP_SUMMARY"
