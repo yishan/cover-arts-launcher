@@ -148,7 +148,7 @@ def select_candidate_issue(
     for issue in issues:
         ident = issue["identifier"].strip().lower()
         if explicit:
-            if ident == explicit:
+            if ident == explicit or (len(issues) == 1 and ident.endswith(f"-{explicit.rsplit('-', 1)[-1]}")):
                 return issue
             continue
 
@@ -213,38 +213,74 @@ def fetch_issues_from_linear(
 ) -> list[dict[str, Any]]:
     """Fetch candidate issues or one explicit issue from Linear."""
     if explicit_issue_id:
-        match = re.fullmatch(r"([A-Za-z][A-Za-z0-9_-]*)-(\d+)", explicit_issue_id.strip())
-        if not match:
-            raise ValueError(
-                f"explicit issue_id must look like SAAN-123, got {explicit_issue_id!r}"
-            )
-        query = f"""
-        query FetchIssueByIdentifier($teamKey: String!, $number: Float!) {{
-          issues(
-            first: 1,
-            filter: {{
-              team: {{ key: {{ eqIgnoreCase: $teamKey }} }},
-              number: {{ eq: $number }}
-            }}
-          ) {{
-            nodes {{ {ISSUE_FIELDS} }}
+        ident = explicit_issue_id.strip()
+        # 1. Direct lookup supports both human identifiers (e.g. SAAN-16) and UUIDs.
+        direct_query = f"""
+        query FetchIssueById($id: String!) {{
+          issue(id: $id) {{
+            {ISSUE_FIELDS}
           }}
         }}
         """
-        data = graphql_request(
-            api_key,
-            query,
-            {"teamKey": match.group(1), "number": int(match.group(2))},
-        )
-        nodes = (data.get("issues") or {}).get("nodes") or []
-        return [normalize_issue(node) for node in nodes]
+        try:
+            data = graphql_request(api_key, direct_query, {"id": ident})
+            node = data.get("issue")
+            if isinstance(node, dict) and node.get("id"):
+                return [normalize_issue(node)]
+        except LinearApiError as error:
+            print(f"Direct issue(id={ident!r}) lookup did not match: {error}", file=sys.stderr)
+
+        # 2. Fallback: match by issue number + team key or team name.
+        match = re.fullmatch(r"([A-Za-z][A-Za-z0-9_-]*)-(\d+)", ident)
+        if match:
+            fallback_query = f"""
+            query FetchIssueByNumber($teamRef: String!, $number: Float!) {{
+              issues(
+                first: 5,
+                filter: {{
+                  number: {{ eq: $number }},
+                  team: {{
+                    or: [
+                      {{ key: {{ eqIgnoreCase: $teamRef }} }},
+                      {{ name: {{ eqIgnoreCase: $teamRef }} }}
+                    ]
+                  }}
+                }}
+              ) {{
+                nodes {{ {ISSUE_FIELDS} }}
+              }}
+            }}
+            """
+            data = graphql_request(
+                api_key,
+                fallback_query,
+                {"teamRef": match.group(1), "number": int(match.group(2))},
+            )
+            nodes = (data.get("issues") or {}).get("nodes") or []
+            if nodes:
+                return [normalize_issue(node) for node in nodes]
+
+        # 3. Emit non-sensitive team diagnostic to help spot team key vs name mismatch.
+        try:
+            teams_data = graphql_request(api_key, "{ teams(first: 20) { nodes { key name } } }")
+            teams = ((teams_data.get("teams") or {}).get("nodes") or [])
+            summary = ", ".join(f"{t.get('key')} ({t.get('name')})" for t in teams)
+            print(f"Issue {ident!r} not found. Accessible Linear teams: {summary or '(none)'}", file=sys.stderr)
+        except LinearApiError as error:
+            print(f"Unable to list Linear teams for diagnostics: {error}", file=sys.stderr)
+        return []
 
     query = f"""
     query FetchFeedbackIssues($teamKey: String!, $projectName: String!, $labelName: String!) {{
       issues(
         first: 50,
         filter: {{
-          team: {{ key: {{ eqIgnoreCase: $teamKey }} }},
+          team: {{
+            or: [
+              {{ key: {{ eqIgnoreCase: $teamKey }} }},
+              {{ name: {{ eqIgnoreCase: $teamKey }} }}
+            ]
+          }},
           project: {{ name: {{ eqIgnoreCase: $projectName }} }},
           labels: {{ some: {{ name: {{ eqIgnoreCase: $labelName }} }} }},
           state: {{ type: {{ in: ["triage", "backlog", "unstarted", "started"] }} }}
