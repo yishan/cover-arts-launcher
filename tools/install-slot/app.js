@@ -11,6 +11,7 @@ import {
   appendDynamicSlot,
   dynamicPartitionEntries,
   removeDynamicSlot,
+  unprovidedPartitionNames,
 } from "./dynamic-layout.js";
 import {
   decodeDynamicSidecarRecord,
@@ -79,6 +80,20 @@ function setResult(selector, message, kind = "") {
   const target = $(selector);
   target.textContent = message;
   target.className = `inline-message${kind ? ` ${kind}` : ""}`;
+}
+
+function setCompatibilityNotice(partitionNames = []) {
+  const notice = $("#play-compat-notice");
+  const names = Array.isArray(partitionNames) ? partitionNames : [];
+  if (names.length === 0) {
+    notice.textContent = "";
+    notice.hidden = true;
+    return;
+  }
+  const shown = names.slice(0, 4).join("、");
+  const list = names.length > 4 ? `${shown} 等 ${names.length} 个分区` : shown;
+  notice.textContent = `该玩法镜像声明了 Launcher 不会创建的独立分区：${list}。管理器只安装 App，不会创建或保存这些独立分区；依赖它们的图书导入或数据存储等功能可能不可用。安装成功也不代表这些功能可用；如需使用，请按该玩法的官方说明确认安装与导入要求。`;
+  notice.hidden = false;
 }
 
 function setDeviceState(message, kind = "idle") {
@@ -611,6 +626,7 @@ async function loadPreferredCover() {
 async function preparePlay(bytes, metadata, expectedSha = "") {
   const sourceSha = await verifyPublished(bytes, expectedSha);
   const extracted = extractAppImage(bytes);
+  const extraPartitions = unprovidedPartitionNames(extracted.partitions);
   const appShaBytes = await sha256(extracted.data);
   state.preparedPlay = {
     app: extracted.data,
@@ -628,6 +644,7 @@ async function preparePlay(bytes, metadata, expectedSha = "") {
   $("#play-version").value = state.preparedPlay.version;
   $("#play-source-id").value = state.preparedPlay.sourceId;
   $("#image-info").textContent = `${extracted.kind === "merged" ? "已从合并镜像提取" : "App 镜像"} · ${extracted.length} bytes · App SHA-256 ${state.preparedPlay.appSha}`;
+  setCompatibilityNotice(extraPartitions);
   applyRecommendation();
   refreshActions();
 }
@@ -843,6 +860,7 @@ async function resolvePlayUrl() {
   state.coverBusy = true;
   state.preparedPlay = null;
   state.pendingPlay = null;
+  setCompatibilityNotice([]);
   clearCoverPreview("正在读取官方封面…");
   refreshActions();
   try {
@@ -867,6 +885,7 @@ async function resolvePlayUrl() {
   } catch (error) {
     state.preparedPlay = null;
     state.pendingPlay = null;
+    setCompatibilityNotice([]);
     clearCoverPreview("未能读取官方封面。");
     const hint = location.protocol === "file:" && error instanceof TypeError
       ? "请先启动 Play Manager 本地服务，或改用 http://127.0.0.1:4173 打开。"
@@ -897,6 +916,7 @@ async function ensurePreparedPlay() {
   if (current.sourceId !== selected.sourceId || current.version !== selected.version ||
       current.firmwareSha256 !== selected.firmwareSha256) {
     state.preparedPlay = null;
+    setCompatibilityNotice([]);
     throw new Error("官网玩法已更新，请重新读取或选择玩法后再安装。");
   }
   if (state.preparedPlay?.sourceSha === current.firmwareSha256) return;
@@ -923,7 +943,7 @@ async function prepareLocalFile() {
   state.pendingPlay = null;
   try {
     const file = $("#play-file").files[0];
-    if (!file) { state.preparedPlay = null; refreshActions(); return; }
+    if (!file) { state.preparedPlay = null; setCompatibilityNotice([]); refreshActions(); return; }
     const bytes = new Uint8Array(await file.arrayBuffer());
     await preparePlay(bytes, {
       sourceKind: "local",
@@ -935,6 +955,7 @@ async function prepareLocalFile() {
     setResult("#play-result", "本地固件结构与 SHA 已确认。", "ok");
   } catch (error) {
     state.preparedPlay = null;
+    setCompatibilityNotice([]);
     setResult("#play-result", `本地固件无效：${error.message}`, "error");
     refreshActions();
   }
@@ -1114,6 +1135,7 @@ async function prepareAnotherPlay() {
   hidePlayCompletion();
   state.preparedPlay = null;
   state.pendingPlay = null;
+  setCompatibilityNotice([]);
   clearCoverPreview();
   $("#play-url").value = "";
   $("#play-file").value = "";
@@ -1441,6 +1463,7 @@ function selectSource(source, updateUrl = true) {
   state.sourceKind = source === "play" ? "play-api" : "local";
   state.preparedPlay = null;
   state.pendingPlay = null;
+  setCompatibilityNotice([]);
   clearCoverPreview();
   $("#play-source").hidden = source !== "play";
   $("#local-source").hidden = source !== "local";

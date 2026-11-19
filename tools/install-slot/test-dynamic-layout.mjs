@@ -16,6 +16,7 @@ import {
   planDynamicLibrary,
   reduceDynamicAppend,
   removeDynamicSlot,
+  unprovidedPartitionNames,
   validateDynamicSlots,
 } from "./dynamic-layout.js";
 
@@ -47,6 +48,27 @@ test("builds the standard partition entries around the dynamic play list", () =>
     { name: "ota_1", offset: 0x240000, size: 0x110000 },
     { name: "otadata", offset: 0x7fe000, size: 0x2000 },
   ]);
+});
+
+test("reports play-specific partitions the Launcher does not create", () => {
+  assert.deepEqual(unprovidedPartitionNames([
+    { name: "nvs", type: 1, subtype: 2 },
+    { name: "phy_init", type: 1, subtype: 1 },
+    { name: "factory", type: 0, subtype: 0 },
+    { name: "cardid", type: 1, subtype: 0x81 },
+    { name: "books", type: 1, subtype: 0x81 },
+    { name: "recovery", type: 0, subtype: 0x20 },
+    { name: "coredump", type: 1, subtype: 3 },
+    { name: "otadata", type: 1, subtype: 0 },
+    { name: "books", type: 1, subtype: 0x81 },
+  ]), ["cardid", "books", "recovery"]);
+});
+
+test("a Launcher-shaped table has no unprovided partitions", () => {
+  const layout = planDynamicLibrary([700 * 1024]);
+  assert.deepEqual(unprovidedPartitionNames(dynamicPartitionEntries(layout.slots)), []);
+  assert.deepEqual(unprovidedPartitionNames([]), []);
+  assert.deepEqual(unprovidedPartitionNames(null), []);
 });
 
 test("append transaction commits the partition table last and then clears otadata", () => {

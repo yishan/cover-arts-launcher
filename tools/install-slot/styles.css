@@ -342,6 +342,16 @@ input[type="file"]::file-selector-button { min-height: 30px; margin-right: 10px;
 .inline-message.ok { color: var(--success); }
 .inline-message.error { color: var(--danger); }
 
+.compat-notice {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-left: 4px solid var(--orange);
+  color: #533400;
+  background: var(--warning-bg);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
 .completion { display: grid; grid-template-columns: 108px minmax(0, 1fr); gap: 22px; align-items: center; margin-top: 28px; padding: 20px; border: 2px solid var(--device); color: white; background: var(--device); box-shadow: 9px 9px 0 var(--signal); }
 .completion-art { width: 108px; box-shadow: 5px 5px 0 var(--orange); }
 .completion-copy h3 { font-size: 28px; }

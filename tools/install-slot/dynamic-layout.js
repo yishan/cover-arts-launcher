@@ -28,6 +28,28 @@ export const DYNAMIC_SYSTEM_PARTITIONS = Object.freeze([
   Object.freeze({ name: "factory", type: 0, subtype: 0, offset: 0x10000, size: 0x170000 }),
 ]);
 
+const LAUNCHER_PROVIDED_PARTITIONS = new Set([
+  ...DYNAMIC_SYSTEM_PARTITIONS.map((entry) => entry.name),
+  "otadata",
+]);
+// ESP-IDF internal data partitions do not represent play features, so their
+// absence from the Launcher layout is not a compatibility limitation.
+const LAUNCHER_IGNORED_DATA_SUBTYPES = new Set([0x03, 0x04, 0x05, 0x06]);
+
+// Returns the partitions a merged play image declares that the Launcher
+// layout never creates. App-only input carries no table, so it reports none.
+export function unprovidedPartitionNames(entries) {
+  if (!Array.isArray(entries)) return [];
+  const names = [];
+  for (const entry of entries) {
+    if (!entry || typeof entry.name !== "string" || !entry.name) continue;
+    if (LAUNCHER_PROVIDED_PARTITIONS.has(entry.name) || /^ota_\d+$/.test(entry.name)) continue;
+    if (entry.type === 1 && LAUNCHER_IGNORED_DATA_SUBTYPES.has(entry.subtype)) continue;
+    if (!names.includes(entry.name)) names.push(entry.name);
+  }
+  return names;
+}
+
 function requireInteger(value, name) {
   if (!Number.isSafeInteger(value)) throw new Error(`${name} must be a safe integer.`);
   return value;

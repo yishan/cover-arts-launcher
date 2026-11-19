@@ -58,6 +58,23 @@ test("official source supports title search, category browsing, and accessible c
   assert.match(css, /@media \(max-width: 620px\)[\s\S]*\.catalog-grid/);
 });
 
+test("warns before installation when a play declares partitions the Launcher cannot create", () => {
+  assert.match(html, /id="play-compat-notice" class="compat-notice" role="status" aria-live="polite" hidden/);
+  assert.match(css, /\.compat-notice\s*\{[^}]*border-left/s);
+  assert.match(app, /const extraPartitions = unprovidedPartitionNames\(extracted\.partitions\)/);
+  assert.match(app, /setCompatibilityNotice\(extraPartitions\)/);
+  assert.match(app, /不会创建或保存这些独立分区/);
+  assert.match(app, /安装成功也不代表这些功能可用/);
+  const prepare = app.match(/async function preparePlay\(bytes, metadata, expectedSha = ""\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
+  assert.ok(prepare);
+  assert.match(prepare, /const extraPartitions = unprovidedPartitionNames\(extracted\.partitions\)/);
+  for (const name of ["resolvePlayUrl", "prepareLocalFile", "prepareAnotherPlay", "selectSource", "ensurePreparedPlay"]) {
+    const flow = app.match(new RegExp(`async function ${name}\\(\\) \\{([\\s\\S]*?)\\n\\}`))?.[1]
+      ?? app.match(new RegExp(`function ${name}\\(([\\s\\S]*?)\\n\\}`))?.[1] ?? "";
+    assert.match(flow, /setCompatibilityNotice\(\[\]\)/, `${name} must clear the stale notice`);
+  }
+});
+
 test("system installation begins with the official Launcher discovery step", () => {
   assert.match(html, /<span class="step-index"[^>]*>01<\/span>[\s\S]*?从官网获取启动器/);
   assert.match(html, /id="launcher-store-link"[^>]+aria-disabled="true"[^>]*>Cover-Arts 启动器<\/a>/);

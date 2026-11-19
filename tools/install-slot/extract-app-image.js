@@ -301,6 +301,7 @@ export function extractAppImage(input) {
   const bytes = asBytes(input);
   let kind = "app";
   let appOffset = 0;
+  let partitions = [];
 
   const possibleTable = bytes.length >= PARTITION_TABLE_OFFSET + PARTITION_TABLE_SIZE
     ? bytes.subarray(PARTITION_TABLE_OFFSET, PARTITION_TABLE_OFFSET + PARTITION_TABLE_SIZE)
@@ -313,11 +314,12 @@ export function extractAppImage(input) {
     if (!factory) throw new Error("Merged image has no factory app partition.");
     kind = "merged";
     appOffset = factory.offset;
+    partitions = table.entries;
   }
 
   const length = espImageLength(bytes, appOffset);
   if (length > MAX_APP_IMAGE_SIZE) {
     throw new Error(`App image length ${length} exceeds dynamic arena capacity 0x${MAX_APP_IMAGE_SIZE.toString(16)}.`);
   }
-  return { kind, appOffset, length, data: bytes.slice(appOffset, appOffset + length) };
+  return { kind, appOffset, length, data: bytes.slice(appOffset, appOffset + length), partitions };
 }
