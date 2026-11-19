@@ -164,6 +164,16 @@ have a valid partition-table MD5 and a factory app. The extracted app may use
 the available play arena up to its capacity. Its displayed SHA is bound into
 the DPS1 sidecar record.
 
+The manager writes only the verified app; it does not recreate a play's own
+data or auxiliary app partitions. For merged input, it compares the declared
+table with the partitions the Launcher provides and, before installation,
+lists any extra partitions (for example a play-specific `books` storage
+partition). The app is still installed, but the notice states that those
+partitions are not created and that features depending on them may be
+unavailable. A successful installation does not prove those features work;
+the play's official instructions remain authoritative for its import and
+storage requirements.
+
 Plays do not need a Launcher SDK or health-confirmation callback. Each launch
 uses a one-shot OTA boot: reset or power-cycle returns to the Launcher, and the
 verified play remains installed with the same title and cover so it can be

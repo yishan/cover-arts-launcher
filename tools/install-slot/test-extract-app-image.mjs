@@ -55,10 +55,11 @@ function partitionSector(entries, corruptMd5 = false) {
   return sector;
 }
 
-function mergedImage({ app = buildAppImage(), includeFactory = true, corruptMd5 = false } = {}) {
+function mergedImage({ app = buildAppImage(), includeFactory = true, corruptMd5 = false, extraEntries = [] } = {}) {
   const entries = [
     { name: "nvs", type: 1, subtype: 2, offset: 0x9000, size: 0x6000 },
     ...(includeFactory ? [{ name: "factory", type: 0, subtype: 0, offset: 0x10000, size: 0x170000 }] : []),
+    ...extraEntries,
   ];
   const bytes = new Uint8Array(0x10000 + app.length).fill(0xff);
   bytes.set(partitionSector(entries, corruptMd5), 0x8000);
@@ -72,6 +73,15 @@ test("accepts an app-only ESP32-C3 image", () => {
   assert.equal(result.kind, "app");
   assert.equal(result.length, app.length);
   assert.deepEqual(result.data, app);
+  assert.deepEqual(result.partitions, []);
+});
+
+test("returns the declared partitions of a merged image", () => {
+  const app = buildAppImage(0x2000);
+  const books = { name: "books", type: 1, subtype: 0x81, offset: 0x360000, size: 0x3a0000 };
+  const result = extractAppImage(mergedImage({ app, extraEntries: [books] }));
+  assert.deepEqual(result.partitions.at(-1), books);
+  assert.equal(result.partitions.some(({ name }) => name === "factory"), true);
 });
 test("extracts the factory app from a merged image with valid partition MD5", () => {
   const app = buildAppImage(0x2000);

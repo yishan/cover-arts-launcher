@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { createHash, webcrypto } from "node:crypto";
 import test from "node:test";
 import { extractAppImage } from "./extract-app-image.js";
+import { unprovidedPartitionNames } from "./dynamic-layout.js";
 import { managerApiUrl, normalizeOfficialPlay } from "./play-source.js";
 
 const app = await readFile(new URL("app.js", import.meta.url), "utf8");
@@ -24,7 +25,7 @@ function harness({ changed = false, corrupt = false, malformed = false } = {}) {
   const play = { projectId: 1, title: "Demo", shareVersion: "1", downloadUrl: "/api/download/community/demo", firmwareSha256: hash };
   const pending = { ...normalizeOfficialPlay(play), detailUrl: "https://ai-passport.folotoy.cn/plays/1/", coverBytes: null };
   const state = { pendingPlay: pending, preparedPlay: null, verifiedDownload: null };
-  const fields = new Map([['#play-title', { value: 'Edited title' }], ['#play-version', { value: '1' }], ['#play-source-id', { value: 'play:1' }], ['#image-info', {}]]);
+  const fields = new Map([['#play-title', { value: 'Edited title' }], ['#play-version', { value: '1' }], ['#play-source-id', { value: 'play:1' }], ['#image-info', {}], ['#play-compat-notice', {}]]);
   const calls = [];
   const fetchImpl = async (url, options) => {
     calls.push({ url, options });
@@ -33,10 +34,10 @@ function harness({ changed = false, corrupt = false, malformed = false } = {}) {
     if (corrupt) result[0] ^= 1;
     return new Response(result);
   };
-  const names = ["toHex", "normalizeSha", "sha256", "verifyPublished", "preparePlay", "fetchOfficialResource", "fetchOfficialMetadata", "ensurePreparedPlay"];
-  const ensure = new Function("state", "$", "fetch", "crypto", "extractAppImage", "normalizeOfficialPlay", "managerApiUrl", "setResult", "updateTitleCheck", "applyRecommendation", "refreshActions",
+  const names = ["toHex", "normalizeSha", "sha256", "verifyPublished", "setCompatibilityNotice", "preparePlay", "fetchOfficialResource", "fetchOfficialMetadata", "ensurePreparedPlay"];
+  const ensure = new Function("state", "$", "fetch", "crypto", "extractAppImage", "unprovidedPartitionNames", "normalizeOfficialPlay", "managerApiUrl", "setResult", "updateTitleCheck", "applyRecommendation", "refreshActions",
     names.map(source).join("\n") + "\nreturn ensurePreparedPlay;")(
-    state, (selector) => fields.get(selector), fetchImpl, webcrypto, extractAppImage, normalizeOfficialPlay,
+    state, (selector) => fields.get(selector), fetchImpl, webcrypto, extractAppImage, unprovidedPartitionNames, normalizeOfficialPlay,
     (path) => managerApiUrl(path, { protocol: "https:" }), () => {}, () => {}, () => {}, () => {});
   return { ensure, state, calls, pending, hash };
 }
