@@ -6,6 +6,7 @@ import {
   normalizeOfficialPlay,
   officialPlayApiPath,
 } from "./play-source.js";
+import { inspectLauncherTitle } from "./title-font.js";
 
 const officialPayload = {
   ok: true,
@@ -26,11 +27,35 @@ test("maps the official Play response to installer metadata", () => {
     sourceId: "play:281",
     title: "meta-pass 多固件启动器",
     deviceTitle: "meta-pass 多固件启动器",
+    deviceTitleChanges: [],
     version: "1037-2",
     coverUrl: "/api/media/plays/meta-pass.webp?v=1037-2",
     firmwareUrl: "/api/download/community/meta-pass",
     firmwareSha256: "b4041f5a6cfdf2f7a191b40ca1c65c4263e4747134d10804cb5cd64b4b827fb4",
   });
+});
+
+test("adapts an official title to the Launcher font instead of requiring a manual rename", () => {
+  const play = normalizeOfficialPlay({
+    play: {
+      ...officialPayload.play,
+      title: { zh: "恶魔·契约🎮", en: "Demon Pact" },
+    },
+  });
+  assert.equal(play.deviceTitle, "恶魔 契约");
+  assert.deepEqual(play.deviceTitleChanges, [
+    { character: "·", codePoint: "U+00B7", replacement: " " },
+    { character: "🎮", codePoint: "U+1F3AE", replacement: "" },
+  ]);
+  assert.equal(inspectLauncherTitle(play.deviceTitle).valid, true);
+});
+
+test("falls back to the play id when no official title character is displayable", () => {
+  const play = normalizeOfficialPlay({
+    play: { ...officialPayload.play, title: "🎮🎮" },
+  });
+  assert.equal(play.deviceTitle, "Play 281");
+  assert.deepEqual(play.deviceTitleChanges.map(({ character }) => character), ["🎮"]);
 });
 
 test("prefers the official Chinese title supported by the Launcher font", () => {

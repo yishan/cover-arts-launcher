@@ -1,6 +1,6 @@
+import { fitLauncherTitle, normalizeLauncherTitle } from "./title-font.js";
+
 export const OFFICIAL_PLAY_ORIGIN = "https://ai-passport.folotoy.cn";
-const encoder = new TextEncoder();
-const LAUNCHER_TITLE_MAX_BYTES = 64;
 
 function localized(value) {
   if (typeof value === "string") return value.trim();
@@ -14,12 +14,11 @@ function launcherTitle(value, playId) {
   const title = candidates
     .map((candidate) => String(candidate ?? "").trim())
     .find(Boolean) ?? `Play ${playId}`;
-  let bounded = "";
-  for (const character of title) {
-    if (encoder.encode(bounded + character).length > LAUNCHER_TITLE_MAX_BYTES) break;
-    bounded += character;
-  }
-  return bounded || `Play ${playId}`;
+  const normalized = normalizeLauncherTitle(title);
+  return {
+    title: fitLauncherTitle(normalized.title) || `Play ${playId}`,
+    changes: normalized.changes,
+  };
 }
 
 function requiredString(value, label) {
@@ -38,11 +37,13 @@ export function normalizeOfficialPlay(payload) {
   const firmwareSha256 = requiredString(play.firmwareSha256 ?? play.firmware?.sha256, "firmware SHA-256").toLowerCase();
   if (!/^[0-9a-f]{64}$/.test(firmwareSha256)) throw new Error("Official firmware SHA-256 is invalid.");
 
+  const device = launcherTitle(play.title, playId);
   return {
     playId,
     sourceId: `play:${playId}`,
     title,
-    deviceTitle: launcherTitle(play.title, playId),
+    deviceTitle: device.title,
+    deviceTitleChanges: device.changes,
     version: String(play.shareVersion ?? play.version ?? play.revisionId ?? "").trim(),
     coverUrl: String(play.thumbnail || play.image || "").trim(),
     firmwareUrl,
