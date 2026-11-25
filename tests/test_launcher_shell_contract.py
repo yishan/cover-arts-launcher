@@ -121,11 +121,28 @@ class LauncherShellContractTest(unittest.TestCase):
             '"launcher_dynamic_sidecar.c"',
             '"launcher_trust_store.c"',
             '"launcher_stats.c"',
+            '"launcher_resume.c"',
+            '"launcher_resume_policy.c"',
             '"launcher_time.c"',
         ):
             self.assertIn(source, self.cmake)
         for dependency in ("app_update", "bootloader_support", "mbedtls", "nvs_flash"):
             self.assertIn(dependency, self.cmake)
+
+    def test_deep_sleep_wake_restores_the_last_play(self) -> None:
+        resume = read("main/launcher_resume.c")
+        self.assertIn("ESP_RST_DEEPSLEEP", self.main)
+        self.assertIn("launcher_resume_decide", self.main)
+        self.assertIn("launcher_resume_load", self.main)
+        self.assertIn("launcher_resume_clear", self.main)
+        self.assertIn("nvs_get_blob", resume)
+        self.assertIn("nvs_set_blob", resume)
+        self.assertIn("launcher_resume_save", self.boot)
+        boot_body = function_body(self.boot, "launcher_boot_slot")
+        self.assertRegex(
+            boot_body,
+            r"if \(count_launch\) \{[^}]*launcher_stats_record_launch",
+        )
 
     def test_chinese_ui_and_persistent_details_are_wired(self) -> None:
         for text in ("玩法库", "准备就绪", "确认：启动", "玩法详情",

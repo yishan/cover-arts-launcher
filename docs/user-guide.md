@@ -9,6 +9,8 @@
 - `Up` / `Down`: move through installed plays.
 - `OK`: launch the centered play.
 - `OK Long`: open details; press `OK` in details to return to the library.
+- Automatic sleep inside a play: waking the device restores the same play
+  instead of opening the library, so the foreground play keeps running.
 - Restart or power cycle: return to the Launcher while keeping verified plays.
 - Adapted plays only: hold `Up` on that play's existing cover or start page to
   return directly to the Launcher. This optional shortcut is not reserved during
@@ -62,7 +64,8 @@ Automatic physical compaction is not included in v1.6.0.
 
 Compatible generic plays require no source change to install or launch. Without
 the optional return protocol, restart or power cycle the device to return to the
-Launcher. Creators can use the
+Launcher. Automatic screen-off sleep is not treated as a reset: on wake, the
+Launcher restores the play that was running before sleep. Creators can use the
 [compatibility skill](../skills/ai-passport-cover-arts-launcher/SKILL.md) to add
 `Up Long` only to an existing cover or start page.
 
